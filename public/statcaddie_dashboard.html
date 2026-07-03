@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stat Caddie Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --green-dark: #1a3a2a;
+    --green-mid:  #2d5c3e;
+    --green-light:#4a8c5c;
+    --gold:       #e07b00;
+    --blue:       #4a90d9;
+    --red:        #e63946;
+    --bg:         #eaf0ea;
+    --card-bg:    #ffffff;
+    --border:     #c8d8c8;
+    --text:       #111;
+    --muted:      #666;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Arial Narrow', Arial, sans-serif; font-size: 12px; background: var(--bg); color: var(--text); }
+
+  /* ── HEADER ── */
+  .dash-header {
+    background: var(--green-dark);
+    color: #fff;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  .dash-header h1 { font-size: 20px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }
+  .dash-header .sub { font-size: 10px; opacity: .7; margin-top: 2px; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .btn { padding: 6px 14px; border-radius: 3px; border: none; cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .3px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-green  { background: var(--green-light); color: #fff; }
+  .btn-gold   { background: var(--gold); color: #fff; }
+  .btn-red    { background: #c0392b; color: #fff; }
+  .btn-gray   { background: #555; color: #fff; }
+  .btn:hover  { opacity: .85; }
+
+  /* ── FILTER BAR ── */
+  .filter-bar {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filter-bar label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-right: 4px; }
+  .filter-bar select, .filter-bar input { border: 1px solid var(--border); border-radius: 3px; padding: 4px 8px; font-size: 11px; }
+  #round-count { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  /* ── MAIN LAYOUT ── */
+  .dash-body { padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* ── SECTION HEADING ── */
+  .section-heading {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--green-mid);
+    border-bottom: 2px solid var(--green-mid);
+    padding-bottom: 4px; margin: 20px 0 12px;
+  }
+
+  /* ── SEASON AVERAGES CARDS ── */
+  .avg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .avg-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    border-top: 3px solid var(--green-mid);
+  }
+  .avg-card .label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .avg-card .value { font-size: 22px; font-weight: 700; color: var(--green-dark); margin: 4px 0 2px; line-height: 1; }
+  .avg-card .sub   { font-size: 9px; color: var(--muted); }
+  .avg-card.gold   { border-top-color: var(--gold); }
+  .avg-card.blue   { border-top-color: var(--blue); }
+  .avg-card.red    { border-top-color: var(--red); }
+
+  /* ── SCORING BREAKDOWN BAR ── */
+  .scoring-bar-wrap { background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; padding: 12px 16px; margin-bottom: 10px; }
+  .scoring-bar { display: flex; height: 24px; border-radius: 3px; overflow: hidden; margin: 8px 0; }
+  .scoring-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; transition: width .3s; overflow: hidden; white-space: nowrap; }
+  .seg-eagle  { background: #b8860b; }
+  .seg-birdie { background: var(--red); }
+  .seg-par    { background: #999; color: #fff; }
+  .seg-bogey  { background: var(--blue); }
+  .seg-double { background: #2c5f8a; }
+  .seg-worse  { background: var(--green-dark); }
+  .scoring-legend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  .leg-item { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+  .leg-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── TABLES ── */
+  .table-wrap { overflow-x: auto; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 10px; }
+  table.dash-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.dash-table th {
+    background: var(--green-mid); color: #fff; font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .4px; padding: 6px 8px; text-align: center;
+    white-space: nowrap; position: sticky; top: 0;
+  }
+  table.dash-table th.left { text-align: left; }
+  table.dash-table td { padding: 5px 8px; text-align: center; border-bottom: 1px solid #eee; white-space: nowrap; }
+  table.dash-table td.left { text-align: left; }
+  table.dash-table tr:last-child td { border-bottom: none; }
+  table.dash-table tr:hover td { background: #f0f8f0; }
+  table.dash-table tr.avg-row td { background: #d4e6d4; font-weight: 700; border-top: 2px solid var(--green-mid); }
+
+  /* Score vs par coloring */
+  .vs-under { color: var(--red); font-weight: 700; }
+  .vs-over  { color: var(--blue); font-weight: 700; }
+  .vs-even  { color: var(--muted); }
+
+  /* ── CHARTS GRID ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .chart-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+  }
+  .chart-card h3 {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--green-mid); margin-bottom: 10px;
+  }
+  .chart-card canvas { max-height: 220px; }
+
+  /* ── TOURNAMENT GRID ── */
+  .tournament-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .tournament-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .tournament-card .tc-header {
+    background: var(--green-dark);
+    color: #fff;
+    padding: 8px 12px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .tournament-card .tc-header .tc-sub { font-size: 9px; opacity: .7; font-weight: normal; margin-top: 2px; }
+  .tournament-card .tc-body { padding: 10px 12px; }
+  .tc-stat-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; }
+  .tc-stat-row .tc-lbl { color: var(--muted); }
+  .tc-stat-row .tc-val { font-weight: 700; color: var(--green-dark); }
+
+  /* ── NO DATA ── */
+  .no-data {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .no-data a { color: var(--green-mid); font-weight: 700; }
+
+  /* ── DELETE CONFIRM ── */
+  .del-btn { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 13px; padding: 0 4px; }
+  .del-btn:hover { color: #8b0000; }
+
+  @media print {
+    .dash-header, .filter-bar, .header-actions { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .btn { display: none; }
+    @page { size: landscape; margin: .4in; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="dash-header">
+  <div>
+    <div class="h1" style="font-size:20px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">⛳ Stat Caddie Dashboard</div>
+    <div class="sub">Season Statistics &amp; Round Reporting</div>
+  </div>
+  <div class="header-actions">
+    <a class="btn btn-green" href="statcaddie_capture.html" target="_blank">+ Enter Round</a>
+    <button class="btn btn-gray" onclick="window.print()">🖨 Print</button>
+    <button class="btn btn-red" onclick="clearAllRounds()">🗑 Clear All Rounds</button>
+  </div>
+</div>
+
+<!-- FILTER BAR -->
+<div class="filter-bar">
+  <div>
+    <label>Player</label>
+    <select id="filter-player" onchange="render()"><option value="">All Players</option></select>
+  </div>
+  <div>
+    <label>Tournament</label>
+    <select id="filter-tournament" onchange="render()"><option value="">All Tournaments</option></select>
+  </div>
+  <div>
+    <label>From</label>
+    <input type="date" id="filter-from" onchange="render()">
+  </div>
+  <div>
+    <label>To</label>
+    <input type="date" id="filter-to" onchange="render()">
+  </div>
+  <div>
+    <label>Min Holes</label>
+    <select id="filter-holes" onchange="render()">
+      <option value="9">9+</option>
+      <option value="18" selected>18</option>
+    </select>
+  </div>
+  <span id="round-count"></span>
+</div>
+
+<!-- BODY -->
+<div class="dash-body" id="dash-body">
+  <div class="no-data" id="no-data-msg">
+    <div style="font-size:40px;margin-bottom:12px;">⛳</div>
+    <div>No rounds in the log yet.</div>
+    <div style="margin-top:8px;font-size:12px;"><a href="statcaddie_capture.html" target="_blank">Enter a round →</a> then hit <strong>Commit Round to Log</strong>.</div>
+  </div>
+  <div id="data-sections" style="display:none;">
+
+    <!-- SEASON AVERAGES -->
+    <div class="section-heading">Season Averages</div>
+    <div class="avg-grid" id="avg-grid"></div>
+
+    <!-- SCORING BREAKDOWN -->
+    <div class="section-heading">Scoring Breakdown</div>
+    <div class="scoring-bar-wrap">
+      <div style="font-size:10px;color:var(--muted);">Hole outcomes across all rounds</div>
+      <div class="scoring-bar" id="scoring-bar"></div>
+      <div class="scoring-legend" id="scoring-legend"></div>
+    </div>
+
+    <!-- TREND CHARTS -->
+    <div class="section-heading">Trends Over Time</div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Score vs. Par</h3><canvas id="chart-score"></canvas></div>
+      <div class="chart-card"><h3>Fairway % &amp; GIR %</h3><canvas id="chart-fw-gir"></canvas></div>
+      <div class="chart-card"><h3>Total Putts per Round</h3><canvas id="chart-putts"></canvas></div>
+      <div class="chart-card"><h3>Scrambling % &amp; Sand Save %</h3><canvas id="chart-scram"></canvas></div>
+    </div>
+
+    <!-- ROUND BY ROUND TABLE -->
+    <div class="section-heading">Round-by-Round</div>
+    <div class="table-wrap">
+      <table class="dash-table" id="round-table">
+        <thead>
+          <tr>
+            <th class="left">#</th>
+            <th class="left">Date</th>
+            <th class="left">Player</th>
+            <th class="left">Tournament</th>
+            <th class="left">Course</th>
+            <th>Rnd</th>
+            <th>Score</th>
+            <th>+/-</th>
+            <th>F9</th>
+            <th>B9</th>
+            <th>FW%</th>
+            <th>GIR%</th>
+            <th>Putts</th>
+            <th>Pts/Hole</th>
+            <th>Scram%</th>
+            <th>SS%</th>
+            <th>Drive</th>
+            <th>Prox</th>
+            <th>Eagles</th>
+            <th>Birdies</th>
+            <th>Pars</th>
+            <th>Bogeys</th>
+            <th>Dbl+</th>
+            <th>Pen</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="round-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- TOURNAMENT SUMMARIES -->
+    <div class="section-heading">Tournament Summaries</div>
+    <div class="tournament-cards" id="tournament-cards"></div>
+
+  </div><!-- end data-sections -->
+</div>
+
+<script>
+// ─── LOAD DATA ────────────────────────────────────────
+function loadRounds() {
+  try { return JSON.parse(localStorage.getItem('statcaddieRounds') || '[]'); }
+  catch(e) { return []; }
+}
+
+// ─── FILTER ───────────────────────────────────────────
+function filteredRounds() {
+  const all     = loadRounds();
+  const player  = document.getElementById('filter-player').value;
+  const tourn   = document.getElementById('filter-tournament').value;
+  const from    = document.getElementById('filter-from').value;
+  const to      = document.getElementById('filter-to').value;
+  const minH    = parseInt(document.getElementById('filter-holes').value) || 9;
+
+  return all.filter(r => {
+    const s = r.summary;
+    if (player && r.playerName !== player) return false;
+    if (tourn  && r.tournament !== tourn)  return false;
+    if (from   && r.roundDate < from)      return false;
+    if (to     && r.roundDate > to)        return false;
+    if (s.holesPlayed < minH)              return false;
+    return true;
+  });
+}
+
+// ─── HELPERS ─────────────────────────────────────────
+const fmt1 = v => v == null ? '—' : v.toFixed(1);
+const fmt0 = v => v == null ? '—' : Math.round(v);
+const fmtP = v => v == null ? '—' : v.toFixed(1) + '%';
+const fmtVs = v => v == null ? '—' : (v === 0 ? 'E' : (v > 0 ? '+' : '') + v);
+const avg = (arr, key) => {
+  const vals = arr.map(r => r.summary[key]).filter(v => v != null);
+  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+};
+const sum = (arr, key) => arr.reduce((a,r) => a + (r.summary[key] || 0), 0);
+
+function vsClass(v) {
+  if (v == null) return '';
+  if (v < 0) return 'vs-under';
+  if (v > 0) return 'vs-over';
+  return 'vs-even';
+}
+
+// ─── POPULATE FILTERS ────────────────────────────────
+function populateFilters() {
+  const all = loadRounds();
+  const players = [...new Set(all.map(r=>r.playerName).filter(Boolean))].sort();
+  const tourns  = [...new Set(all.map(r=>r.tournament).filter(Boolean))].sort();
+
+  const pSel = document.getElementById('filter-player');
+  const tSel = document.getElementById('filter-tournament');
+  const pCur = pSel.value, tCur = tSel.value;
+
+  pSel.innerHTML = '<option value="">All Players</option>' + players.map(p=>`<option value="${p}">${p}</option>`).join('');
+  tSel.innerHTML = '<option value="">All Tournaments</option>' + tourns.map(t=>`<option value="${t}">${t}</option>`).join('');
+  if (pCur) pSel.value = pCur;
+  if (tCur) tSel.value = tCur;
+}
+
+// ─── SEASON AVERAGES ─────────────────────────────────
+function renderAvgGrid(rounds) {
+  const n = rounds.length;
+  const avgScore = avg(rounds, 'totalScore');
+  const avgVsPar = avg(rounds, 'vspar');
+  const avgFwPct = avg(rounds, 'fwPct');
+  const avgGirPct = avg(rounds, 'girPct');
+  const avgPutts = avg(rounds, 'puttsTotal');
+  const avgPuttsHole = avg(rounds, 'puttsPerHole');
+  const avgPuttsGir = avg(rounds, 'puttsPerGir');
+  const avgScram = avg(rounds, 'scramblingPct');
+  const avgSs = avg(rounds, 'ssPct');
+  const avgDrive = avg(rounds, 'driveAvg');
+  const avgProx = avg(rounds, 'proxAvg');
+  const avgPar3 = avg(rounds, 'par3Avg');
+  const avgPar4 = avg(rounds, 'par4Avg');
+  const avgPar5 = avg(rounds, 'par5Avg');
+
+  const cards = [
+    { label:'Scoring Avg', value: fmt1(avgScore), sub: fmtVs(avgVsPar ? Math.round(avgVsPar*10)/10 : null) + ' vs par', cls:'' },
+    { label:'Fairway %',   value: fmtP(avgFwPct), sub: `${n} rounds`, cls:'gold' },
+    { label:'GIR %',       value: fmtP(avgGirPct), sub: `avg ${fmt1(avgGirPct ? avgGirPct*18/100 : null)} GIRs`, cls:'gold' },
+    { label:'Total Putts', value: fmt1(avgPutts), sub: `${fmt1(avgPuttsHole)}/hole · ${fmt1(avgPuttsGir)}/GIR hole`, cls:'blue' },
+    { label:'Scrambling %',value: fmtP(avgScram), sub: 'Up & Down when GIR missed', cls:'blue' },
+    { label:'Sand Save %', value: fmtP(avgSs), sub: '', cls:'blue' },
+    { label:'Avg Drive',   value: avgDrive ? fmt0(avgDrive) + ' yds' : '—', sub: '', cls:'' },
+    { label:'Avg Proximity',value: avgProx ? fmt0(avgProx) + ' ft' : '—', sub: 'from approach', cls:'' },
+    { label:'Par 3 Avg',   value: fmt1(avgPar3), sub: 'vs par 3.0', cls:'' },
+    { label:'Par 4 Avg',   value: fmt1(avgPar4), sub: 'vs par 4.0', cls:'' },
+    { label:'Par 5 Avg',   value: fmt1(avgPar5), sub: 'vs par 5.0', cls:'' },
+    { label:'Rounds Logged',value: n, sub: '', cls:'' },
+  ];
+
+  document.getElementById('avg-grid').innerHTML = cards.map(c =>
+    `<div class="avg-card ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      <div class="sub">${c.sub}</div>
+    </div>`
+  ).join('');
+}
+
+// ─── SCORING BREAKDOWN BAR ───────────────────────────
+function renderScoringBar(rounds) {
+  const totals = { eagle:0, birdie:0, par:0, bogey:0, double:0, worse:0 };
+  rounds.forEach(r => {
+    totals.eagle  += r.summary.eagles  || 0;
+    totals.birdie += r.summary.birdies || 0;
+    totals.par    += r.summary.pars    || 0;
+    totals.bogey  += r.summary.bogeys  || 0;
+    totals.double += r.summary.doubles || 0;
+    totals.worse  += r.summary.worses  || 0;
+  });
+  const total = Object.values(totals).reduce((a,b)=>a+b, 0) || 1;
+  const segs = [
+    { key:'eagle',  label:'Eagles',  color:'#b8860b' },
+    { key:'birdie', label:'Birdies', color:'#e63946' },
+    { key:'par',    label:'Pars',    color:'#888' },
+    { key:'bogey',  label:'Bogeys',  color:'#4a90d9' },
+    { key:'double', label:'Doubles', color:'#2c5f8a' },
+    { key:'worse',  label:'Triple+', color:'#1a3a2a' },
+  ];
+  const barEl = document.getElementById('scoring-bar');
+  const legEl = document.getElementById('scoring-legend');
+  barEl.innerHTML = segs.map(s => {
+    const pct = (totals[s.key]/total*100).toFixed(1);
+    return `<div class="seg seg-${s.key}" style="width:${pct}%;background:${s.color};" title="${s.label}: ${totals[s.key]} (${pct}%)">${pct > 5 ? totals[s.key] : ''}</div>`;
+  }).join('');
+  legEl.innerHTML = segs.map(s =>
+    `<span class="leg-item"><span class="leg-dot" style="background:${s.color};"></span>${s.label}: <strong>${totals[s.key]}</strong> (${(totals[s.key]/total*100).toFixed(1)}%)</span>`
+  ).join('');
+}
+
+// ─── CHARTS ──────────────────────────────────────────
+let charts = {};
+function destroyCharts() { Object.values(charts).forEach(c => c.destroy()); charts = {}; }
+
+const CHART_DEFAULTS = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: { legend: { labels: { font: { size: 10 } } } },
+  scales: {
+    x: { ticks: { font: { size: 9 }, maxRotation: 45 } },
+    y: { ticks: { font: { size: 9 } } }
+  }
+};
+
+function makeLabel(r, i) {
+  const d = r.roundDate ? r.roundDate.slice(5) : `R${i+1}`;
+  const t = r.tournament ? r.tournament.slice(0,10) : '';
+  return t ? `${d} ${t}` : d;
+}
+
+function renderCharts(rounds) {
+  destroyCharts();
+  if (!rounds.length) return;
+
+  const labels = rounds.map(makeLabel);
+  const green = '#2d5c3e', gold = '#e07b00', blue = '#4a90d9', red = '#e63946';
+
+  // Score vs par
+  charts.score = new Chart(document.getElementById('chart-score'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'vs Par', data: rounds.map(r => r.summary.vspar),
+        borderColor: red, backgroundColor: 'rgba(230,57,70,.1)',
+        tension: .3, pointRadius: 4, fill: true,
+      }]
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      plugins: { ...CHART_DEFAULTS.plugins, annotation: {} },
+      scales: {
+        ...CHART_DEFAULTS.scales,
+        y: { ...CHART_DEFAULTS.scales.y, title: { display: true, text: 'Strokes vs Par', font:{size:9} } }
+      }
+    }
+  });
+
+  // FW% and GIR%
+  charts.fwgir = new Chart(document.getElementById('chart-fw-gir'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Fairway %', data: rounds.map(r => r.summary.fwPct), borderColor: gold, backgroundColor: 'rgba(224,123,0,.08)', tension: .3, pointRadius: 4 },
+        { label: 'GIR %',     data: rounds.map(r => r.summary.girPct), borderColor: green, backgroundColor: 'rgba(45,92,62,.08)', tension: .3, pointRadius: 4 },
+      ]
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: { ...CHART_DEFAULTS.scales, y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display:true, text:'%', font:{size:9} } } }
+    }
+  });
+
+  // Putts
+  charts.putts = new Chart(document.getElementById('chart-putts'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Total Putts', data: rounds.map(r => r.summary.puttsTotal),
+        backgroundColor: blue, borderColor: '#2c5f8a', borderWidth: 1,
+      }]
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: {
+        ...CHART_DEFAULTS.scales,
+        y: {
+          ...CHART_DEFAULTS.scales.y,
+          suggestedMin: 24, suggestedMax: 38,
+          title: { display:true, text:'Putts', font:{size:9} }
+        }
+      }
+    }
+  });
+
+  // Scrambling & Sand Saves
+  charts.scram = new Chart(document.getElementById('chart-scram'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Scrambling %', data: rounds.map(r => r.summary.scramblingPct), borderColor: green, tension:.3, pointRadius:4 },
+        { label: 'Sand Save %',  data: rounds.map(r => r.summary.ssPct),          borderColor: gold,  tension:.3, pointRadius:4, borderDash:[4,4] },
+      ]
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: { ...CHART_DEFAULTS.scales, y: { ...CHART_DEFAULTS.scales.y, min:0, max:100, title:{display:true,text:'%',font:{size:9}} } }
+    }
+  });
+}
+
+// ─── ROUND TABLE ─────────────────────────────────────
+function renderRoundTable(rounds) {
+  const tbody = document.getElementById('round-tbody');
+
+  if (!rounds.length) { tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;padding:20px;color:#999;">No rounds match the current filters.</td></tr>'; return; }
+
+  // Running totals for avg row
+  let totScore=0, totVs=0, totFw=0, totGir=0, totPutts=0, totScram=0, totSs=0, n=0;
+
+  const rows = rounds.map((r, i) => {
+    const s = r.summary;
+    const vs = s.vspar;
+    n++;
+    totScore += s.totalScore || 0;
+    totVs    += vs || 0;
+    totFw    += s.fwPct || 0;
+    totGir   += s.girPct || 0;
+    totPutts += s.puttsTotal || 0;
+    totScram += s.scramblingPct || 0;
+    totSs    += s.ssPct || 0;
+
+    return `<tr>
+      <td>${i+1}</td>
+      <td class="left">${r.roundDate || '—'}</td>
+      <td class="left">${r.playerName || '—'}</td>
+      <td class="left">${r.tournament || '—'}</td>
+      <td class="left">${r.courseName || '—'}</td>
+      <td>${r.roundNum || '—'}</td>
+      <td><strong>${s.totalScore || '—'}</strong></td>
+      <td class="${vsClass(vs)}"><strong>${fmtVs(vs)}</strong></td>
+      <td>${s.frontScore || '—'}</td>
+      <td>${s.backScore || '—'}</td>
+      <td>${fmtP(s.fwPct)}</td>
+      <td>${fmtP(s.girPct)}</td>
+      <td>${s.puttsTotal || '—'}</td>
+      <td>${fmt1(s.puttsPerHole)}</td>
+      <td>${fmtP(s.scramblingPct)}</td>
+      <td>${fmtP(s.ssPct)}</td>
+      <td>${s.driveAvg ? s.driveAvg + 'y' : '—'}</td>
+      <td>${s.proxAvg ? fmt0(s.proxAvg) + "'" : '—'}</td>
+      <td>${s.eagles  || 0}</td>
+      <td style="color:var(--red);font-weight:${s.birdies>0?700:400}">${s.birdies || 0}</td>
+      <td>${s.pars    || 0}</td>
+      <td style="color:var(--blue)">${s.bogeys  || 0}</td>
+      <td>${(s.doubles||0)+(s.worses||0)}</td>
+      <td>${s.penTotal || 0}</td>
+      <td><button class="del-btn" onclick="deleteRound(${r.id})" title="Remove this round">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  // Average row
+  const avgRow = n ? `<tr class="avg-row">
+    <td colspan="6" class="left">Season Average (${n} rounds)</td>
+    <td>${fmt1(totScore/n)}</td>
+    <td class="${vsClass(totVs/n)}">${fmtVs(Math.round(totVs/n*10)/10)}</td>
+    <td>—</td><td>—</td>
+    <td>${fmtP(totFw/n)}</td>
+    <td>${fmtP(totGir/n)}</td>
+    <td>${fmt1(totPutts/n)}</td>
+    <td>—</td>
+    <td>${fmtP(totScram/n)}</td>
+    <td>${fmtP(totSs/n)}</td>
+    <td colspan="8">—</td>
+    <td></td>
+  </tr>` : '';
+
+  tbody.innerHTML = rows + avgRow;
+}
+
+// ─── TOURNAMENT SUMMARIES ────────────────────────────
+function renderTournamentCards(rounds) {
+  // Group by tournament name (non-empty)
+  const groups = {};
+  rounds.forEach(r => {
+    const key = r.tournament || '(No Tournament)';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+
+  const container = document.getElementById('tournament-cards');
+  if (!Object.keys(groups).length) { container.innerHTML = '<div style="color:var(--muted);font-size:11px;">No tournament data.</div>'; return; }
+
+  container.innerHTML = Object.entries(groups).map(([name, rs]) => {
+    const n = rs.length;
+    const s = rs.map(r=>r.summary);
+    const safeavg = key => { const v=s.filter(x=>x[key]!=null); return v.length ? v.reduce((a,b)=>a+b[key],0)/v.length : null; };
+    const totalScore = s.reduce((a,b)=>a+(b.totalScore||0),0);
+    const totalPar   = s.reduce((a,b)=>a+(b.totalPar||0),0);
+    const avgVs = (totalScore-totalPar)/n;
+    const dates = rs.map(r=>r.roundDate).filter(Boolean).sort();
+    const dateRange = dates.length === 1 ? dates[0] : (dates[0] + ' – ' + dates[dates.length-1]);
+    const players = [...new Set(rs.map(r=>r.playerName).filter(Boolean))].join(', ');
+
+    return `<div class="tournament-card">
+      <div class="tc-header">
+        <div>${name}</div>
+        <div class="tc-sub">${dateRange} &nbsp;·&nbsp; ${n} round${n>1?'s':''} &nbsp;·&nbsp; ${players}</div>
+      </div>
+      <div class="tc-body">
+        <div class="tc-stat-row"><span class="tc-lbl">Total Strokes</span><span class="tc-val">${totalScore} (${fmtVs(totalScore-totalPar)} vs par)</span></div>
+        <div class="tc-stat-row"><span class="tc-lbl">Scoring Avg</span><span class="tc-val ${vsClass(avgVs)}">${fmt1(totalScore/n)} (${fmtVs(Math.round(avgVs*10)/10)})</span></div>
+        <div class="tc-stat-row"><span class="tc-lbl">Fairway %</span><span class="tc-val">${fmtP(safeavg('fwPct'))}</span></div>
+        <div class="tc-stat-row"><span class="tc-lbl">GIR %</span><span class="tc-val">${fmtP(safeavg('girPct'))}</span></div>
+        <div class="tc-stat-row"><span class="tc-lbl">Putts / Round</span><span class="tc-val">${fmt1(safeavg('puttsTotal'))}</span></div>
+        <div class="tc-stat-row"><span class="tc-lbl">Scrambling %</span><span class="tc-val">${fmtP(safeavg('scramblingPct'))}</span></div>
+        <div class="tc-stat-row"><span class="tc-lbl">Eagles · Birdies · Bogeys</span>
+          <span class="tc-val">${s.reduce((a,b)=>a+(b.eagles||0),0)} · <span style="color:var(--red)">${s.reduce((a,b)=>a+(b.birdies||0),0)}</span> · <span style="color:var(--blue)">${s.reduce((a,b)=>a+(b.bogeys||0),0)}</span></span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── DELETE ROUND ────────────────────────────────────
+function deleteRound(id) {
+  if (!confirm('Remove this round from the log?')) return;
+  try {
+    const rounds = loadRounds().filter(r => r.id !== id);
+    localStorage.setItem('statcaddieRounds', JSON.stringify(rounds));
+    populateFilters();
+    render();
+  } catch(e) {}
+}
+
+function clearAllRounds() {
+  if (!confirm('Permanently delete ALL rounds from the log? This cannot be undone.')) return;
+  try { localStorage.removeItem('statcaddieRounds'); } catch(e) {}
+  populateFilters();
+  render();
+}
+
+// ─── MAIN RENDER ─────────────────────────────────────
+function render() {
+  const rounds = filteredRounds();
+  const hasAny = loadRounds().length > 0;
+
+  document.getElementById('no-data-msg').style.display   = hasAny ? 'none' : 'block';
+  document.getElementById('data-sections').style.display = hasAny ? 'block' : 'none';
+  document.getElementById('round-count').textContent     = rounds.length + ' round' + (rounds.length!==1?'s':'') + ' shown';
+
+  if (!hasAny) return;
+
+  renderAvgGrid(rounds);
+  renderScoringBar(rounds);
+  renderCharts(rounds);
+  renderRoundTable(rounds);
+  renderTournamentCards(rounds);
+}
+
+// ─── INIT ────────────────────────────────────────────
+populateFilters();
+render();
+
+// Refresh if another tab commits a round
+window.addEventListener('storage', e => {
+  if (e.key === 'statcaddieRounds') { populateFilters(); render(); }
+});
+</script>
+</body>
+</html>
