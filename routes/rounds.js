@@ -69,7 +69,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const {
     playerName, tournament, roundNum = 1, roundDate, courseName, rating, slope,
-    conditions, weather, roundNotes, holeData,
+    conditions, weather, roundNotes, holeData, summary,
     clippdTournamentId, clippdRoundId, clippdPlayerId, // set when the event was picked from the synced catalog
   } = req.body;
 
@@ -81,6 +81,12 @@ router.post('/', async (req, res) => {
       header: { playerName, rating, slope, conditions, weather, roundNotes },
       holeData,
     });
+    // Persist the client-computed stat summary so the dashboard/reports can read
+    // aggregate stats straight from the account (GET /api/rounds returns it).
+    if (summary && typeof summary === 'object') {
+      await pool.query('UPDATE rounds SET summary=$1 WHERE id=$2 AND user_id=$3',
+        [JSON.stringify(summary), roundId, req.user.id]);
+    }
     res.status(201).json({ id: roundId, status });
   } catch (err) {
     console.error(err);
