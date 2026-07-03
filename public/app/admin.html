@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platform Stats — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .admin-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:24px; }
+  .kpi { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+  .kpi .k-lbl { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; }
+  .kpi .k-val { font-size:30px; font-weight:800; color:var(--green-dark); line-height:1.1; margin-top:4px; }
+  .kpi .k-sub { font-size:12px; color:var(--muted); margin-top:3px; }
+  .panel { background:#fff; border:1px solid var(--border); border-radius:12px; padding:18px; margin-bottom:24px; }
+  .panel h3 { font-size:14px; color:var(--green-dark); margin:0 0 14px; }
+  .chart { display:flex; align-items:flex-end; gap:4px; height:140px; padding-top:10px; }
+  .chart .bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; min-width:0; }
+  .chart .bar { width:70%; max-width:26px; background:var(--green-mid); border-radius:3px 3px 0 0; transition:height .2s; }
+  .chart .bar-lbl { font-size:9px; color:var(--muted); white-space:nowrap; transform:rotate(-60deg); transform-origin:center; height:26px; }
+  .chart .bar-n { font-size:10px; color:var(--green-dark); font-weight:700; }
+  .badge { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:10px; }
+  .badge.active { background:#e6f6ec; color:#0a7d3c; }
+  .badge.inactive { background:#f3f4f5; color:#6b7c73; }
+  .muted-cell { color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ Stat <span>Caddie</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link"><span class="icon">📊</span> Stats Reports</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Admin</div>
+        <a href="/app/admin.html" id="admin-nav-link" class="sidebar-link active"><span class="icon">📈</span> Platform Stats</a>
+      </div>
+    </div>
+
+    <main id="app-main">
+      <div class="page-title">Platform Stats</div>
+      <div class="page-sub">Beta activity across all users. Visible to you only.</div>
+
+      <div id="admin-error" style="display:none;background:#fbeae7;color:#9a3b2f;border-radius:8px;padding:12px 16px;margin-bottom:16px;"></div>
+
+      <!-- KPI cards -->
+      <div class="admin-grid" id="kpi-grid">
+        <div class="kpi"><div class="k-lbl">Total Users</div><div class="k-val" id="k-users">—</div><div class="k-sub" id="k-users-sub"></div></div>
+        <div class="kpi"><div class="k-lbl">Active Users</div><div class="k-val" id="k-active">—</div><div class="k-sub">logged ≥1 round</div></div>
+        <div class="kpi"><div class="k-lbl">Total Rounds</div><div class="k-val" id="k-rounds">—</div><div class="k-sub" id="k-rounds-sub"></div></div>
+        <div class="kpi"><div class="k-lbl">Active (7d)</div><div class="k-val" id="k-active7">—</div><div class="k-sub">users w/ a round</div></div>
+        <div class="kpi"><div class="k-lbl">Active (30d)</div><div class="k-val" id="k-active30">—</div><div class="k-sub">users w/ a round</div></div>
+      </div>
+
+      <!-- Rounds over time -->
+      <div class="panel">
+        <h3>Rounds logged — last 30 days</h3>
+        <div class="chart" id="chart"><div class="muted-cell" style="align-self:center;">Loading…</div></div>
+      </div>
+
+      <!-- Per-tester table -->
+      <div class="panel">
+        <h3>Testers</h3>
+        <table class="app-table" id="users-table">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Status</th><th>Joined</th><th style="text-align:right;">Rounds</th><th>Last active</th></tr>
+          </thead>
+          <tbody id="users-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:#aaa;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>
+const esc = s => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+
+(async () => {
+  const user = await initApp();
+  if (!user) return;
+
+  const res = await API.get('/api/admin/stats');
+  if (!res) return; // api.js already redirected on 401
+  if (!res.ok) {
+    const err = document.getElementById('admin-error');
+    err.style.display = 'block';
+    err.textContent = res.status === 403
+      ? 'This page is restricted to the platform owner.'
+      : 'Could not load stats (' + res.status + ').';
+    return;
+  }
+  const { overview: o, roundsByDay, users } = await res.json();
+
+  // KPIs
+  document.getElementById('k-users').textContent    = o.total_users;
+  document.getElementById('k-users-sub').textContent = '+' + o.signups_7d + ' this week';
+  document.getElementById('k-active').textContent   = o.active_users;
+  document.getElementById('k-rounds').textContent   = o.total_rounds;
+  document.getElementById('k-rounds-sub').textContent = '+' + o.rounds_7d + ' this week';
+  document.getElementById('k-active7').textContent  = o.active_7d;
+  document.getElementById('k-active30').textContent = o.active_30d;
+
+  // Chart — build a continuous last-14-day axis so gaps read correctly
+  const byDay = {};
+  (roundsByDay || []).forEach(d => { byDay[d.day] = d.n; });
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const dt = new Date(); dt.setDate(dt.getDate() - i);
+    const key = dt.toISOString().slice(0, 10);
+    days.push({ key, label: key.slice(5), n: byDay[key] || 0 });
+  }
+  const max = Math.max(1, ...days.map(d => d.n));
+  const chart = document.getElementById('chart');
+  chart.innerHTML = days.map(d =>
+    `<div class="bar-wrap" title="${d.key}: ${d.n} round(s)">
+       <div class="bar-n">${d.n || ''}</div>
+       <div class="bar" style="height:${Math.round((d.n / max) * 100)}%"></div>
+       <div class="bar-lbl">${d.label}</div>
+     </div>`).join('');
+
+  // Testers table
+  const tbody = document.getElementById('users-tbody');
+  if (!users || !users.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#aaa;">No users yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => {
+    const active = u.subscription_status === 'active' || u.role === 'team_member';
+    return `<tr>
+      <td><strong>${esc(u.name)}</strong></td>
+      <td class="muted-cell">${esc(u.email)}</td>
+      <td><span class="badge ${active ? 'active' : 'inactive'}">${active ? 'active' : (u.subscription_status || 'inactive')}</span></td>
+      <td class="muted-cell">${esc(u.joined)}</td>
+      <td style="text-align:right;font-weight:700;">${u.rounds}</td>
+      <td class="muted-cell">${u.last_round ? esc(u.last_round) : '—'}</td>
+    </tr>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>

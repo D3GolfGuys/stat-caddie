@@ -24,5 +24,22 @@ async function initApp(opts = {}) {
     document.querySelectorAll('.team-admin-only').forEach(el => el.style.display = '');
   }
 
+  // Owner-only: inject an Admin link into the sidebar on every page.
+  if (user.isAdmin) {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && !document.getElementById('admin-nav-link')) {
+      const section = document.createElement('div');
+      section.className = 'sidebar-section';
+      section.innerHTML =
+        '<div class="sidebar-label">Admin</div>' +
+        '<a href="/app/admin.html" id="admin-nav-link" class="sidebar-link">' +
+        '<span class="icon">📈</span> Platform Stats</a>';
+      sidebar.appendChild(section);
+      if (window.location.pathname === '/app/admin.html') {
+        section.querySelector('.sidebar-link').classList.add('active');
+      }
+    }
+  }
+
   return user;
 }

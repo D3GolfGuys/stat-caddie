@@ -81,7 +81,9 @@ router.post('/logout', (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
+  const adminEmail = (process.env.ADMIN_EMAIL || 'mdeckert24@gmail.com').toLowerCase();
+  const isAdmin = (req.user.email || '').toLowerCase() === adminEmail;
+  res.json({ user: { ...req.user, isAdmin } });
 });
 
 // POST /api/auth/accept-invite  (join team via invitation token)
