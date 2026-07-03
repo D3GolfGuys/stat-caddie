@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mobile Capture — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ Stat <span>Caddie</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link active"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link"><span class="icon">📊</span> Stats Reports</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+    <main id="app-main" style="padding:0;max-width:100%;">
+      <div style="background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;font-size:13px;color:var(--muted);">
+        📱 <strong style="color:var(--green-dark);">Mobile Capture</strong> — For best experience on a phone, open <strong>/statcaddie_mobile.html</strong> directly in your mobile browser and add it to your Home Screen.
+      </div>
+      <iframe
+        src="/statcaddie_mobile.html"
+        style="width:100%;height:calc(100vh - 110px);border:none;display:block;"
+        title="Mobile Round Capture"
+      ></iframe>
+    </main>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>(async () => { await initApp(); })();</script>
+</body>
+</html>

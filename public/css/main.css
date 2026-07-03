@@ -1,0 +1,44 @@
+:root {
+  --green-dark:  #1a3a2a;
+  --green-mid:   #2d5c3e;
+  --green-light: #4a8c5c;
+  --gold:        #e07b00;
+  --blue:        #4a90d9;
+  --red:         #e63946;
+  --bg:          #f4f8f4;
+  --border:      #d0e0d0;
+  --text:        #1a1a1a;
+  --muted:       #666;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: var(--text); background: var(--bg); }
+a { color: var(--green-mid); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 11px 22px; border-radius: 8px; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 600; text-decoration: none; transition: opacity .15s, transform .1s;
+}
+button:active, .btn:active { transform: scale(.97); }
+button:hover, .btn:hover { opacity: .88; }
+.btn-primary   { background: var(--green-mid); color: #fff; }
+.btn-gold      { background: var(--gold); color: #fff; }
+.btn-outline   { background: transparent; border: 2px solid var(--green-mid); color: var(--green-mid); }
+.btn-danger    { background: var(--red); color: #fff; }
+.btn-lg        { padding: 14px 32px; font-size: 16px; border-radius: 10px; }
+.btn-sm        { padding: 7px 14px; font-size: 12px; }
+input, select, textarea {
+  width: 100%; padding: 11px 14px; border: 1.5px solid var(--border);
+  border-radius: 8px; font-size: 14px; background: #fff; color: var(--text);
+  transition: border-color .15s;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green-mid); }
+label { font-size: 13px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 5px; }
+.form-group { margin-bottom: 16px; }
+.error-msg { color: var(--red); font-size: 13px; margin-top: 6px; }
+.success-msg { color: var(--green-mid); font-size: 13px; margin-top: 6px; }
+.card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.badge-active   { background: #d4f0d4; color: var(--green-mid); }
+.badge-inactive { background: #f0d4d4; color: var(--red); }
+.badge-gold     { background: #fef0d4; color: var(--gold); }

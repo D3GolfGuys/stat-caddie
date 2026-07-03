@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+  body { display:flex; flex-direction:column; min-height:100vh; background: linear-gradient(135deg, var(--green-dark) 0%, var(--green-mid) 100%); }
+  .auth-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:32px 16px; }
+  .auth-card { background:#fff; border-radius:16px; padding:40px 36px; width:100%; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+  .auth-logo { text-align:center; margin-bottom:28px; }
+  .auth-logo a { font-size:22px; font-weight:800; color: var(--green-dark); text-decoration:none; }
+  .auth-logo a span { color: var(--gold); }
+  .auth-logo p { font-size:13px; color: var(--muted); margin-top:4px; }
+  h1 { font-size:22px; font-weight:800; color: var(--green-dark); margin-bottom:24px; text-align:center; }
+  .auth-footer { text-align:center; margin-top:20px; font-size:13px; color: var(--muted); }
+  .auth-footer a { color: var(--green-mid); font-weight:600; }
+  #error-msg { background:#fde8ea; color: var(--red); border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; display:none; }
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <a href="/">⛳ Stat <span>Caddie</span></a>
+      <p>Golf statistics platform</p>
+    </div>
+    <h1>Welcome back</h1>
+    <div id="error-msg"></div>
+    <form id="login-form">
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;margin-top:4px;" id="submit-btn">Log In</button>
+    </form>
+    <div class="auth-footer">
+      <p>Don't have an account? <a href="/register.html">Sign up</a></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const errEl = document.getElementById('error-msg');
+    errEl.style.display = 'none';
+    btn.textContent = 'Logging in…'; btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: e.target.email.value, password: e.target.password.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent = data.error || 'Login failed'; errEl.style.display='block'; btn.textContent='Log In'; btn.disabled=false; return; }
+      window.location.href = '/app/index.html';
+    } catch {
+      errEl.textContent = 'Network error. Please try again.'; errEl.style.display='block';
+      btn.textContent='Log In'; btn.disabled=false;
+    }
+  });
+</script>
+</body>
+</html>

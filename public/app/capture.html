@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Round Capture — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+<!-- Reuse the standalone capture tool inside the app shell -->
+<style>
+  #app-main { padding:0; max-width:100%; }
+  /* Embed the capture tool in an iframe-like way by including it directly */
+  .capture-toolbar { background:#fff; border-bottom:1px solid var(--border); padding:10px 16px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .capture-frame { padding:0; }
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ Stat <span>Caddie</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link active"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link"><span class="icon">📊</span> Stats Reports</a>
+      </div>
+      <div class="sidebar-section team-admin-only" style="display:none;">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link"><span class="icon">👥</span> Team Roster</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+    <main id="app-main">
+      <!-- The capture tool is embedded via iframe for clean isolation -->
+      <div class="capture-toolbar">
+        <strong style="font-size:13px;color:var(--green-dark);">🖥️ Desktop Round Capture</strong>
+        <span style="font-size:12px;color:var(--muted);margin-left:4px;">Enter stats hole-by-hole, then click <strong>Commit Round to Log</strong> to save.</span>
+        <a href="/app/reports.html" class="btn btn-outline btn-sm" style="margin-left:auto;">📊 View Reports</a>
+      </div>
+      <iframe
+        src="/statcaddie_capture.html"
+        style="width:100%;height:calc(100vh - 110px);border:none;display:block;"
+        id="capture-frame"
+        title="Round Capture"
+      ></iframe>
+    </main>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>
+(async () => { await initApp(); })();
+</script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ Stat <span>Caddie</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link"><span class="icon">📊</span> Stats Reports</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Roster</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+    <main id="app-main">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div class="page-title" id="team-name">Team Roster</div>
+        <button class="btn btn-primary btn-sm" onclick="openInvite()">+ Invite Player</button>
+      </div>
+      <div class="page-sub">Manage players and view team stats.</div>
+
+      <!-- Invite modal -->
+      <div id="invite-modal" style="display:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px;max-width:480px;">
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;">Invite a Player</h3>
+        <div class="form-group"><label>Player Email Address</label><input type="email" id="invite-email" placeholder="player@example.com"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="sendInvite()">Send Invite</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('invite-modal').style.display='none'">Cancel</button>
+        </div>
+        <div id="invite-result" style="margin-top:12px;font-size:12px;"></div>
+      </div>
+
+      <!-- Members table -->
+      <div class="table-card" style="margin-bottom:16px;">
+        <div class="table-card-header"><h3>Players</h3><span id="member-count" style="font-size:12px;color:var(--muted);"></span></div>
+        <table class="app-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+          <tbody id="members-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Team stats -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>Team Round Log</h3>
+          <span id="team-rounds-count" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <table class="app-table">
+          <thead><tr><th>Date</th><th>Player</th><th>Course</th><th>Tournament</th><th>Score</th><th>+/-</th><th>FW%</th><th>GIR%</th><th>Putts</th></tr></thead>
+          <tbody id="team-rounds-tbody"><tr><td colspan="9" style="text-align:center;padding:20px;color:#aaa;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>
+const fmtVs = v => v==null?'—':(v===0?'E':(v>0?'+':'')+v);
+const fmtP  = v => v==null?'—':Number(v).toFixed(1)+'%';
+
+function openInvite() { document.getElementById('invite-modal').style.display='block'; document.getElementById('invite-email').focus(); }
+
+async function sendInvite() {
+  const email = document.getElementById('invite-email').value.trim();
+  const res = document.getElementById('invite-result');
+  if (!email) return;
+  const r = await API.post('/api/teams/invite', { email });
+  if (!r) return;
+  const data = await r.json();
+  if (r.ok) {
+    res.innerHTML = `✅ Invite sent! Share this link with ${email}:<br><code style="word-break:break-all;font-size:11px;">${data.inviteUrl}</code>`;
+    res.style.color='var(--green-mid)';
+    document.getElementById('invite-email').value='';
+    loadMembers();
+  } else {
+    res.textContent = data.error || 'Failed to send invite'; res.style.color='var(--red)';
+  }
+}
+
+async function removeMember(userId, name) {
+  if (!confirm(`Remove ${name} from the team?`)) return;
+  const r = await API.del(`/api/teams/members/${userId}`);
+  if (r && r.ok) loadMembers();
+}
+
+async function loadMembers() {
+  const r = await API.get('/api/teams/me');
+  if (!r || !r.ok) return;
+  const { team, members } = await r.json();
+  if (team) document.getElementById('team-name').textContent = team.name || 'Team Roster';
+  document.getElementById('member-count').textContent = `${members.length} / ${team?.max_members||15} players`;
+
+  const tbody = document.getElementById('members-tbody');
+  if (!members.length) { tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa;">No players yet. Invite your first player above.</td></tr>'; return; }
+  tbody.innerHTML = members.map(m => `<tr>
+    <td><strong>${m.name}</strong></td>
+    <td>${m.email}</td>
+    <td><span class="badge badge-${m.role==='team_admin'?'gold':'active'}">${m.role==='team_admin'?'Admin':'Player'}</span></td>
+    <td>${m.created_at ? new Date(m.created_at).toLocaleDateString() : '—'}</td>
+    <td>${m.role!=='team_admin' ? `<button class="btn btn-danger btn-sm" onclick="removeMember(${m.id},'${m.name}')">Remove</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+async function loadTeamRounds() {
+  const r = await API.get('/api/teams/rounds');
+  if (!r || !r.ok) return;
+  const rounds = await r.json();
+  document.getElementById('team-rounds-count').textContent = `${rounds.length} rounds`;
+  const tbody = document.getElementById('team-rounds-tbody');
+  if (!rounds.length) { tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#aaa;">No rounds logged yet.</td></tr>'; return; }
+  tbody.innerHTML = rounds.slice(0,50).map(r => {
+    const s = r.summary || {};
+    const vs = s.vspar;
+    return `<tr>
+      <td>${r.round_date||'—'}</td>
+      <td>${r.user_name||r.player_name||'—'}</td>
+      <td>${r.course_name||'—'}</td>
+      <td>${r.tournament||'—'}</td>
+      <td><strong>${s.totalScore||'—'}</strong></td>
+      <td style="${vs<0?'color:var(--red);font-weight:700':vs>0?'color:var(--blue)':''}">${fmtVs(vs)}</td>
+      <td>${fmtP(s.fwPct)}</td><td>${fmtP(s.girPct)}</td><td>${s.puttsTotal||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+(async () => {
+  const user = await initApp();
+  if (!user) return;
+  if (user.role !== 'team_admin') { document.getElementById('app-main').innerHTML='<div class="page-title">Team Admin Only</div><p style="color:var(--muted);margin-top:8px;">Only team administrators can access this page.</p>'; return; }
+  loadMembers();
+  loadTeamRounds();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join Team — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+  body { display:flex; flex-direction:column; min-height:100vh; background: linear-gradient(135deg, var(--green-dark), var(--green-mid)); }
+  .wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:32px 16px; }
+  .card { background:#fff; border-radius:16px; padding:40px 36px; width:100%; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+  .logo { text-align:center; font-size:22px; font-weight:800; color:var(--green-dark); margin-bottom:8px; }
+  .logo span { color:var(--gold); }
+  h1 { font-size:20px; font-weight:800; text-align:center; margin:16px 0 6px; }
+  .sub { text-align:center; font-size:13px; color:var(--muted); margin-bottom:24px; }
+  #error-msg { background:#fde8ea; color:var(--red); border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="logo">⛳ Stat <span>Caddie</span></div>
+    <h1>You've been invited!</h1>
+    <p class="sub">Create your account to join your team on Stat Caddie.</p>
+    <div id="error-msg"></div>
+    <form id="invite-form">
+      <div class="form-group">
+        <label>Your Name</label>
+        <input type="text" id="name" placeholder="First Last" required>
+      </div>
+      <div class="form-group">
+        <label>Password <span style="font-weight:400;color:var(--muted)">(8+ characters)</span></label>
+        <input type="password" id="password" placeholder="••••••••" required minlength="8">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;" id="submit-btn">Join Team</button>
+    </form>
+  </div>
+</div>
+<script>
+  const token = new URLSearchParams(window.location.search).get('token');
+  if (!token) { document.querySelector('.sub').textContent = 'Invalid invitation link.'; document.getElementById('invite-form').style.display='none'; }
+
+  document.getElementById('invite-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const errEl = document.getElementById('error-msg');
+    errEl.style.display='none'; btn.textContent='Joining…'; btn.disabled=true;
+    try {
+      const res = await fetch('/api/auth/accept-invite', {
+        method:'POST', credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token, name: document.getElementById('name').value, password: document.getElementById('password').value }),
+      });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent=data.error||'Failed to join'; errEl.style.display='block'; btn.textContent='Join Team'; btn.disabled=false; return; }
+      window.location.href='/app/index.html';
+    } catch { errEl.textContent='Network error.'; errEl.style.display='block'; btn.textContent='Join Team'; btn.disabled=false; }
+  });
+</script>
+</body>
+</html>

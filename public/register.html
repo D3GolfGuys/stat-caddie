@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+  body { display:flex; flex-direction:column; min-height:100vh; background: linear-gradient(135deg, var(--green-dark) 0%, var(--green-mid) 100%); }
+  .auth-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:32px 16px; }
+  .auth-card { background:#fff; border-radius:16px; padding:40px 36px; width:100%; max-width:460px; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+  .auth-logo { text-align:center; margin-bottom:24px; }
+  .auth-logo a { font-size:22px; font-weight:800; color: var(--green-dark); text-decoration:none; }
+  .auth-logo a span { color: var(--gold); }
+  h1 { font-size:22px; font-weight:800; color: var(--green-dark); margin-bottom:6px; text-align:center; }
+  .auth-sub { text-align:center; font-size:13px; color: var(--muted); margin-bottom:24px; }
+  /* Plan toggle */
+  .plan-toggle { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px; }
+  .plan-opt { border:2px solid var(--border); border-radius:10px; padding:14px 12px; cursor:pointer; transition:all .15s; text-align:center; }
+  .plan-opt.selected { border-color: var(--green-mid); background: #f0f8f0; }
+  .plan-opt .po-name { font-size:13px; font-weight:700; color: var(--green-dark); margin-bottom:2px; }
+  .plan-opt .po-price { font-size:18px; font-weight:800; color: var(--green-mid); }
+  .plan-opt .po-desc { font-size:11px; color: var(--muted); margin-top:3px; }
+  .plan-opt.featured .po-price { color: var(--gold); }
+  #error-msg { background:#fde8ea; color: var(--red); border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; display:none; }
+  .terms { font-size:11px; color: var(--muted); text-align:center; margin-top:12px; line-height:1.5; }
+  .auth-footer { text-align:center; margin-top:16px; font-size:13px; color: var(--muted); }
+  .auth-footer a { color: var(--green-mid); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo"><a href="/">⛳ Stat <span>Caddie</span></a></div>
+    <h1>Create your account</h1>
+    <p class="auth-sub">You'll be redirected to complete payment after signing up.</p>
+
+    <!-- Plan Selection -->
+    <div class="plan-toggle" id="plan-toggle">
+      <div class="plan-opt" id="opt-individual" onclick="selectPlan('individual')">
+        <div class="po-name">Individual</div>
+        <div class="po-price">$9.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
+        <div class="po-desc">1 player · All features</div>
+      </div>
+      <div class="plan-opt featured" id="opt-team" onclick="selectPlan('team')">
+        <div class="po-name">Team ⭐</div>
+        <div class="po-price" style="color:var(--gold);">$39.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
+        <div class="po-desc">Up to 15 players</div>
+      </div>
+    </div>
+
+    <div id="error-msg"></div>
+    <form id="reg-form">
+      <input type="hidden" id="selected-plan" value="individual">
+      <div class="form-group">
+        <label for="name">Full name</label>
+        <input type="text" id="name" placeholder="Your name" required autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="you@example.com" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Password <span style="font-weight:400;color:var(--muted)">(8+ characters)</span></label>
+        <input type="password" id="password" placeholder="••••••••" required autocomplete="new-password" minlength="8">
+      </div>
+      <button type="submit" class="btn btn-gold" style="width:100%;font-size:15px;padding:14px;" id="submit-btn">
+        Continue to Payment →
+      </button>
+    </form>
+    <p class="terms">By continuing you agree to our Terms of Service and Privacy Policy. Billing is handled securely by Stripe.</p>
+    <div class="auth-footer">Already have an account? <a href="/login.html">Log in</a></div>
+  </div>
+</div>
+
+<script>
+  // Pre-select plan from URL
+  const params = new URLSearchParams(window.location.search);
+  const urlPlan = params.get('plan');
+  let selectedPlan = (urlPlan === 'team') ? 'team' : 'individual';
+  selectPlan(selectedPlan);
+
+  function selectPlan(plan) {
+    selectedPlan = plan;
+    document.getElementById('selected-plan').value = plan;
+    document.getElementById('opt-individual').classList.toggle('selected', plan === 'individual');
+    document.getElementById('opt-team').classList.toggle('selected', plan === 'team');
+    document.getElementById('submit-btn').textContent = plan === 'team'
+      ? 'Continue to Payment — $39.99/mo →'
+      : 'Continue to Payment — $9.99/mo →';
+  }
+
+  document.getElementById('reg-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const errEl = document.getElementById('error-msg');
+    errEl.style.display = 'none';
+    btn.textContent = 'Creating account…'; btn.disabled = true;
+
+    try {
+      // 1. Register user
+      const res = await fetch('/api/auth/register', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: document.getElementById('name').value, email: document.getElementById('email').value, password: document.getElementById('password').value, plan: selectedPlan }),
+      });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent = data.error || 'Registration failed'; errEl.style.display='block'; btn.textContent='Continue to Payment →'; btn.disabled=false; return; }
+
+      // 2. Start Stripe checkout
+      btn.textContent = 'Redirecting to payment…';
+      const chkRes = await fetch('/api/subscriptions/checkout', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: selectedPlan }),
+      });
+      const chkData = await chkRes.json();
+      if (!chkRes.ok || !chkData.url) { window.location.href = '/app/index.html'; return; }
+      window.location.href = chkData.url;
+    } catch {
+      errEl.textContent = 'Network error. Please try again.'; errEl.style.display='block';
+      btn.textContent='Continue to Payment →'; btn.disabled=false;
+    }
+  });
+</script>
+</body>
+</html>

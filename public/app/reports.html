@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reports — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ Stat <span>Caddie</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link active"><span class="icon">📊</span> Stats Reports</a>
+      </div>
+      <div class="sidebar-section team-admin-only" style="display:none;">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link"><span class="icon">👥</span> Team Roster</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+    <main id="app-main" style="padding:0;max-width:100%;">
+      <div style="background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:12px;">
+        <strong style="color:var(--green-dark);">📊 Stats Reports</strong>
+        <span>Rounds from your account are loaded automatically.</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="window.print()">🖨 Print</button>
+      </div>
+
+      <!-- Reconciliation worklist: rounds needing stats, and score conflicts -->
+      <style>
+        #recon-bar{background:#fff;border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:12px;flex-wrap:wrap}
+        .recon-pill{border:1px solid var(--border);background:#f4f7f5;border-radius:14px;padding:3px 11px;font-weight:600;cursor:pointer;color:#6b7c73}
+        .recon-pill.warn{color:#8a6d00;background:#fbf4dd;border-color:#ecdca0}
+        .recon-pill.bad{color:#9a3b2f;background:#fbeae7;border-color:#eec4bc}
+        .recon-pill.ok{color:#0a7d3c;background:#e6f6ec;border-color:#b9e3c8}
+        #recon-lists{display:none;background:#fbfdfb;border-bottom:1px solid var(--border);padding:6px 16px 12px;max-height:38vh;overflow-y:auto}
+        .recon-group{margin-top:8px}
+        .recon-group h4{margin:6px 0;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--green-dark)}
+        .recon-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:6px;font-size:12.5px}
+        .recon-row .rr-main{flex:1;min-width:0}
+        .recon-row .rr-sub{color:#6b7c73;font-size:11px;margin-top:1px}
+        .recon-row .btn-sm{padding:4px 9px;font-size:11.5px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-weight:600}
+        .btn-keep{color:#0a7d3c;border-color:#b9e3c8}
+        .btn-mine{color:#1668b0;border-color:#c2d8f0}
+        .recon-empty{color:#6b7c73;font-size:12px;padding:6px 0}
+      </style>
+      <div id="recon-bar">
+        <span style="color:var(--green-dark);font-weight:700;">Reconciliation</span>
+        <span class="recon-pill warn" id="pill-needs" onclick="toggleRecon('needs')">Needs stats: …</span>
+        <span class="recon-pill bad"  id="pill-conf"  onclick="toggleRecon('conf')">Conflicts: …</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadReconPanel()">↻ Refresh</button>
+      </div>
+      <div id="recon-lists"></div>
+
+      <iframe
+        src="/statcaddie_dashboard.html"
+        style="width:100%;height:calc(100vh - 200px);border:none;display:block;"
+        id="reports-frame"
+        title="Stats Reports"
+      ></iframe>
+    </main>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>(async () => { await initApp(); await loadReconPanel(); })();
+
+// ── Reconciliation worklist ────────────────────────────────────────────────
+let _recon = { needs: [], conf: [] };
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function vsPar(n){ return n == null ? '' : (n > 0 ? '+' + n : '' + n); }
+
+async function loadReconPanel(){
+  try {
+    const [nRes, cRes] = await Promise.all([
+      API.get('/api/rounds/needs-stats'),
+      API.get('/api/rounds/conflicts'),
+    ]);
+    _recon.needs = (nRes && nRes.ok) ? await nRes.json() : [];
+    _recon.conf  = (cRes && cRes.ok) ? await cRes.json() : [];
+  } catch { _recon = { needs: [], conf: [] }; }
+
+  const pn = document.getElementById('pill-needs');
+  const pc = document.getElementById('pill-conf');
+  pn.textContent = `Needs stats: ${_recon.needs.length}`;
+  pc.textContent = `Conflicts: ${_recon.conf.length}`;
+  pn.className = 'recon-pill ' + (_recon.needs.length ? 'warn' : 'ok');
+  pc.className = 'recon-pill ' + (_recon.conf.length ? 'bad' : 'ok');
+  renderRecon();
+}
+
+let _reconOpen = null;
+function toggleRecon(which){
+  _reconOpen = (_reconOpen === which) ? null : which;
+  renderRecon();
+}
+
+function renderRecon(){
+  const box = document.getElementById('recon-lists');
+  if (!_reconOpen) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+
+  if (_reconOpen === 'needs') {
+    const rows = _recon.needs.map(r => `
+      <div class="recon-row">
+        <div class="rr-main">
+          <div>${esc(r.tournament) || 'Untitled event'} · R${esc(r.round_num)}</div>
+          <div class="rr-sub">Official ${esc(r.official_score)} (${vsPar(r.official_to_par)})${r.course_name ? ' · ' + esc(r.course_name) : ''} — score locked, add your stats</div>
+        </div>
+        <a class="btn-sm btn-keep" href="/app/capture.html?roundId=${esc(r.id)}">Add stats →</a>
+      </div>`).join('');
+    box.innerHTML = `<div class="recon-group"><h4>Rounds awaiting a stat breakdown</h4>${rows || '<div class="recon-empty">Nothing waiting — every official score has stats. ✓</div>'}</div>`;
+  } else {
+    const rows = _recon.conf.map(r => `
+      <div class="recon-row">
+        <div class="rr-main">
+          <div>${esc(r.tournament) || 'Untitled event'} · R${esc(r.round_num)}</div>
+          <div class="rr-sub">You entered <strong>${esc(r.entered_score)}</strong> · official <strong>${esc(r.official_score)}</strong> — which is right?</div>
+        </div>
+        <button class="btn-sm btn-keep" onclick="resolveConflict(${esc(r.id)}, 'official')">Keep official</button>
+        <button class="btn-sm btn-mine" onclick="resolveConflict(${esc(r.id)}, 'entered')">Use mine</button>
+      </div>`).join('');
+    box.innerHTML = `<div class="recon-group"><h4>Score conflicts</h4>${rows || '<div class="recon-empty">No conflicts. ✓</div>'}</div>`;
+  }
+}
+
+async function resolveConflict(id, choice){
+  try {
+    const res = await API.post(`/api/rounds/${id}/resolve`, { choice });
+    if (res && res.ok) {
+      await loadReconPanel();
+      // refresh the embedded report so corrected scoring flows through
+      const f = document.getElementById('reports-frame');
+      if (f) f.contentWindow.location.reload();
+    } else {
+      alert('Could not resolve — please try again.');
+    }
+  } catch { alert('Network error resolving conflict.'); }
+}
+</script>
+</body>
+</html>

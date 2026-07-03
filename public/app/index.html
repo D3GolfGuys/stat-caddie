@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Stat Caddie</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ Stat <span>Caddie</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link"><span class="icon">📊</span> Stats Reports</a>
+      </div>
+      <div class="sidebar-section team-admin-only" style="display:none;">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link"><span class="icon">👥</span> Team Roster</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+
+    <main id="app-main">
+      <div id="sub-banner" class="sub-banner" style="display:none;">
+        ⚠️ Your subscription is inactive. <a href="/app/account.html">Reactivate →</a>
+      </div>
+
+      <div class="page-title" id="welcome-title">Welcome back</div>
+      <div class="page-sub">Here's a snapshot of your recent activity.</div>
+
+      <!-- Quick Stats -->
+      <div class="stat-cards" id="stat-cards">
+        <div class="stat-card"><div class="sc-lbl">Rounds Logged</div><div class="sc-val" id="sc-rounds">—</div></div>
+        <div class="stat-card gold"><div class="sc-lbl">Scoring Avg</div><div class="sc-val" id="sc-score">—</div><div class="sc-sub" id="sc-vspar"></div></div>
+        <div class="stat-card gold"><div class="sc-lbl">Fairway %</div><div class="sc-val" id="sc-fw">—</div></div>
+        <div class="stat-card gold"><div class="sc-lbl">GIR %</div><div class="sc-val" id="sc-gir">—</div></div>
+        <div class="stat-card blue"><div class="sc-lbl">Avg Putts</div><div class="sc-val" id="sc-putts">—</div></div>
+        <div class="stat-card blue"><div class="sc-lbl">Scrambling %</div><div class="sc-val" id="sc-scram">—</div></div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+        <a href="/app/capture.html" class="btn btn-primary">+ Enter Round (Desktop)</a>
+        <a href="/app/mobile.html"  class="btn btn-outline">📱 Mobile Capture</a>
+        <a href="/app/reports.html" class="btn btn-outline">📊 View Reports</a>
+      </div>
+
+      <!-- Recent Rounds -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>Recent Rounds</h3>
+          <a href="/app/reports.html" style="font-size:12px;color:var(--green-mid);">View all →</a>
+        </div>
+        <div id="recent-rounds-wrap">
+          <table class="app-table" id="recent-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Course</th><th>Tournament</th><th>Rnd</th>
+                <th>Score</th><th>+/-</th><th>FW%</th><th>GIR%</th><th>Putts</th>
+              </tr>
+            </thead>
+            <tbody id="recent-tbody"><tr><td colspan="9" style="text-align:center;padding:24px;color:#aaa;">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>
+const fmtVs = v => v == null ? '—' : (v===0?'E':(v>0?'+':'')+v);
+const fmt1  = v => v == null ? '—' : Number(v).toFixed(1);
+const fmtP  = v => v == null ? '—' : Number(v).toFixed(1)+'%';
+
+(async () => {
+  const user = await initApp();
+  if (!user) return;
+  document.getElementById('welcome-title').textContent = `Welcome back, ${user.name.split(' ')[0]}`;
+
+  const res = await API.get('/api/rounds?limit=20');
+  if (!res || !res.ok) return;
+  const rounds = await res.json();
+
+  document.getElementById('sc-rounds').textContent = rounds.length;
+
+  // Compute season averages from summaries
+  const sums = rounds.map(r => r.summary).filter(Boolean);
+  if (sums.length) {
+    const avg = key => { const v=sums.filter(s=>s[key]!=null); return v.length ? v.reduce((a,b)=>a+b[key],0)/v.length : null; };
+    document.getElementById('sc-score').textContent = fmt1(avg('totalScore'));
+    document.getElementById('sc-vspar').textContent = fmtVs(avg('vspar') != null ? Math.round(avg('vspar')*10)/10 : null) + ' vs par';
+    document.getElementById('sc-fw').textContent    = fmtP(avg('fwPct'));
+    document.getElementById('sc-gir').textContent   = fmtP(avg('girPct'));
+    document.getElementById('sc-putts').textContent = fmt1(avg('puttsTotal'));
+    document.getElementById('sc-scram').textContent = fmtP(avg('scramblingPct'));
+  }
+
+  const tbody = document.getElementById('recent-tbody');
+  if (!rounds.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:#aaa;">No rounds yet. <a href="/app/capture.html">Enter your first round →</a></td></tr>'; return; }
+
+  tbody.innerHTML = rounds.slice(0,10).map(r => {
+    const s = r.summary || {};
+    const vs = s.vspar;
+    const vsClass = vs < 0 ? 'color:var(--red);font-weight:700' : vs > 0 ? 'color:var(--blue)' : '';
+    return `<tr>
+      <td>${r.round_date || '—'}</td>
+      <td>${r.course_name || '—'}</td>
+      <td>${r.tournament || '—'}</td>
+      <td>${r.round_num || '—'}</td>
+      <td><strong>${s.totalScore || '—'}</strong></td>
+      <td style="${vsClass}">${fmtVs(vs)}</td>
+      <td>${fmtP(s.fwPct)}</td>
+      <td>${fmtP(s.girPct)}</td>
+      <td>${s.puttsTotal || '—'}</td>
+    </tr>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>

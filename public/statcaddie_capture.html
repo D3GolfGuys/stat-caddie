@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stat Caddie · Round Capture</title>
+<style>
+  :root {
+    --eagle: #ffd700;
+    --birdie: #e63946;
+    --par: #ffffff;
+    --bogey: #4a90d9;
+    --double: #2c5f8a;
+    --worse: #1a3a5c;
+    --header-bg: #1a3a2a;
+    --header-text: #ffffff;
+    --section-bg: #f0f4f0;
+    --border: #b0c4b0;
+    --input-bg: #ffffff;
+    --summary-bg: #1a3a2a;
+    --summary-text: #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Arial Narrow', Arial, sans-serif;
+    font-size: 11px;
+    background: #e8ede8;
+    color: #111;
+    padding: 12px;
+  }
+
+  /* ── PAGE WRAPPER ── */
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #aaa;
+    box-shadow: 0 2px 12px rgba(0,0,0,.15);
+  }
+
+  /* ── TOP HEADER ── */
+  .page-header {
+    background: var(--header-bg);
+    color: var(--header-text);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .page-header h1 {
+    font-size: 18px;
+    letter-spacing: 1px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .page-header .subtitle {
+    font-size: 10px;
+    opacity: .7;
+    margin-top: 2px;
+  }
+  .logo-block { text-align: right; font-size: 10px; opacity: .7; }
+
+  /* ── ROUND INFO FORM ── */
+  .round-info {
+    background: var(--section-bg);
+    border-bottom: 2px solid var(--border);
+    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+  }
+  .field-group { display: flex; flex-direction: column; gap: 2px; }
+  .field-group label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #555; letter-spacing: .5px; }
+  .field-group input, .field-group select {
+    border: 1px solid #bbb;
+    border-radius: 2px;
+    padding: 4px 6px;
+    font-size: 11px;
+    background: var(--input-bg);
+    width: 100%;
+  }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    background: var(--header-bg);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 16px;
+  }
+
+  /* ── SCORECARD TABLE ── */
+  .scorecard-wrap { overflow-x: auto; padding: 0 0 4px 0; }
+
+  table.scorecard {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5px;
+  }
+
+  table.scorecard th, table.scorecard td {
+    border: 1px solid var(--border);
+    text-align: center;
+    padding: 2px 3px;
+    white-space: nowrap;
+  }
+
+  table.scorecard thead th {
+    background: #2d5c3e;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    padding: 5px 3px;
+  }
+  table.scorecard thead th.group-header {
+    background: #1a3a2a;
+    font-size: 9px;
+    letter-spacing: .8px;
+    padding: 4px;
+  }
+
+  /* Row alternating */
+  table.scorecard tbody tr:nth-child(even) td { background: #f7fbf7; }
+  table.scorecard tbody tr:nth-child(odd)  td { background: #ffffff; }
+
+  /* Subtotal rows */
+  tr.subtotal td {
+    background: #d4e6d4 !important;
+    font-weight: 700;
+    font-size: 10.5px;
+    border-top: 2px solid #2d5c3e;
+  }
+  tr.total-row td {
+    background: #2d5c3e !important;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+    border-top: 2px solid #1a3a2a;
+  }
+
+  /* Score coloring bubbles */
+  .score-cell { position: relative; }
+  .score-bubble {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 11px;
+    text-align: center;
+  }
+  .eagle-bubble   { background: var(--eagle); color: #333; border: 2px solid #b8860b; }
+  .birdie-bubble  { background: var(--birdie); color: #fff; border: 2px solid #a00; }
+  .par-bubble     { background: transparent; }
+  .bogey-bubble   { background: var(--bogey); color: #fff; }
+  .double-bubble  { background: var(--double); color: #fff; }
+  .worse-bubble   { background: var(--worse); color: #fff; }
+
+  /* Inputs inside table */
+  table.scorecard input[type="number"],
+  table.scorecard input[type="text"] {
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: center;
+    font-size: 10.5px;
+    padding: 1px;
+    outline: none;
+  }
+  table.scorecard input[type="number"]:focus,
+  table.scorecard input[type="text"]:focus {
+    background: #fffde7;
+    border-radius: 2px;
+  }
+
+  table.scorecard select {
+    border: none;
+    background: transparent;
+    font-size: 10px;
+    padding: 1px;
+    width: 100%;
+    text-align: center;
+    cursor: pointer;
+    outline: none;
+  }
+  table.scorecard select:focus { background: #fffde7; }
+
+  /* Color-coded select options */
+  select.fw-select option[value="H"] { color: #1a6b1a; font-weight: bold; }
+  select.fw-select option[value="L"] { color: #c0392b; }
+  select.fw-select option[value="R"] { color: #c0392b; }
+  select.fw-select option[value="-"] { color: #888; }
+
+  select.gir-select option[value="Y"] { color: #1a6b1a; font-weight: bold; }
+  select.gir-select option[value="N"] { color: #c0392b; }
+
+  /* Column widths */
+  .col-hole  { width: 30px; }
+  .col-par   { width: 34px; }
+  .col-hcp   { width: 32px; }
+  .col-score { width: 38px; }
+  .col-vs    { width: 32px; }
+  .col-fw    { width: 38px; }
+  .col-gir   { width: 34px; }
+  .col-miss  { width: 46px; }
+  select.miss-select option[value="L"] { color: #c0392b; }
+  select.miss-select option[value="R"] { color: #c0392b; }
+  select.miss-select option[value="Sh"] { color: #2c6fad; }
+  select.miss-select option[value="Lo"] { color: #2c6fad; }
+  select.miss-select:disabled { opacity: .35; cursor: not-allowed; background: #f0f0f0; }
+  .col-prox  { width: 44px; }
+  .col-putts { width: 36px; }
+  .col-drive { width: 50px; }
+  .col-appd  { width: 44px; }
+  .col-ud    { width: 36px; }
+  .col-ss    { width: 36px; }
+  .col-pen   { width: 36px; }
+  .col-notes { width: 80px; }
+
+  /* ── SUMMARY SECTION ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 3px solid var(--header-bg);
+  }
+
+  .stat-box {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+  }
+  .stat-box:nth-child(4n) { border-right: none; }
+
+  .stat-box h3 {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: #2d5c3e;
+    border-bottom: 1px solid #2d5c3e;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 3px;
+  }
+  .stat-row .lbl { font-size: 9.5px; color: #444; }
+  .stat-row .val {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1a3a2a;
+    min-width: 50px;
+    text-align: right;
+  }
+  .stat-row .val.highlight { color: #e63946; }
+  .stat-row .val.good { color: #1a6b1a; }
+
+  /* Scoring breakdown */
+  .scoring-breakdown {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--section-bg);
+    border-top: 1px solid var(--border);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .score-pill {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .score-pill .dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .pill-eagle   { background: #fff8dc; border: 1px solid #b8860b; }
+  .pill-birdie  { background: #fde8ea; border: 1px solid #a00; }
+  .pill-par     { background: #f0f4f0; border: 1px solid #aaa; }
+  .pill-bogey   { background: #e8f0fa; border: 1px solid #4a90d9; }
+  .pill-double  { background: #dde8f4; border: 1px solid #2c5f8a; }
+  .pill-worse   { background: #d0dce8; border: 1px solid #1a3a5c; }
+
+  /* ── FOOTER ── */
+  .page-footer {
+    background: var(--header-bg);
+    color: var(--header-text);
+    padding: 6px 16px;
+    font-size: 9px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    opacity: .85;
+  }
+
+  /* ── PRINT BUTTON ── */
+  .toolbar {
+    padding: 8px 16px;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .btn {
+    padding: 6px 14px;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
+  .btn-print  { background: #2d5c3e; color: #fff; }
+  .btn-clear  { background: #e0e0e0; color: #333; }
+  .btn-commit { background: #e07b00; color: #fff; }
+  .btn-dash   { background: #4a90d9; color: #fff; text-decoration: none; }
+  .btn:hover { opacity: .85; }
+
+  /* Tooltip helper */
+  .col-tip { cursor: help; border-bottom: 1px dotted #aaa; }
+
+  /* ── PRINT STYLES ── */
+  @media print {
+    body { background: white; padding: 0; font-size: 9px; }
+    .toolbar { display: none !important; }
+    .page { box-shadow: none; border: none; max-width: 100%; }
+    table.scorecard { font-size: 9px; }
+    table.scorecard input, table.scorecard select {
+      font-size: 9px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .summary-grid { page-break-inside: avoid; }
+    @page { margin: 0.4in; size: landscape; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- TOOLBAR -->
+  <div class="toolbar" id="toolbar">
+    <button class="btn btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+    <button class="btn btn-commit" onclick="commitRound()" title="Save this round permanently to the round log">✅ Commit Round to Log</button>
+    <button class="btn btn-clear" onclick="clearAll()">↺ New Round</button>
+    <a class="btn btn-dash" href="statcaddie_dashboard.html" target="_blank">📊 View Dashboard</a>
+    <span style="font-size:10px;color:#666;margin-left:8px;" id="save-status">Draft auto-saves. Hit <strong>Commit Round to Log</strong> when the round is complete.</span>
+  </div>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <div>
+      <div class="h1" style="font-size:18px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">STAT CADDIE · ROUND CAPTURE</div>
+      <div class="subtitle">Individual Round Statistics — Full Shot-by-Hole Tracking</div>
+    </div>
+    <div class="logo-block">
+      <div style="font-size:14px;font-weight:700;">⛳</div>
+      <div>Statistical Analysis</div>
+    </div>
+  </div>
+
+  <!-- ROUND INFO -->
+  <div class="round-info">
+    <div class="field-group" style="grid-column:span 2">
+      <label>Player Name</label>
+      <input type="text" id="playerName" placeholder="First Last" oninput="saveData()">
+    </div>
+    <style>
+      .tlink-badge{font-size:10px;font-weight:600;color:#0a7d3c;background:#e6f6ec;border:1px solid #b9e3c8;border-radius:7px;padding:1px 6px;margin-left:6px;display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
+      .tlink-badge a{color:#0a7d3c;text-decoration:none;font-weight:700}
+      .tlink-results{position:absolute;left:0;right:0;top:100%;z-index:50;background:#fff;border:1px solid #d9e2dc;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);max-height:260px;overflow-y:auto;margin-top:3px}
+      .tlink-item{padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f3f1}
+      .tlink-item:last-child{border-bottom:none}
+      .tlink-item:hover{background:#eafaf0}
+      .tlink-name{font-size:12.5px;font-weight:600;color:#1a2b22}
+      .tlink-meta{font-size:11px;color:#6b7c73;margin-top:1px}
+      .tlink-hint{font-size:10.5px;color:#9a6a12;margin-top:3px;min-height:0}
+    </style>
+    <div class="field-group" style="grid-column:span 2; position:relative;">
+      <label>Tournament / Event <span id="tlink-badge" class="tlink-badge" style="display:none;"></span></label>
+      <input type="text" id="tournament" placeholder="Type to search Scoreboard events…" autocomplete="off"
+             oninput="onTournamentInput()" onfocus="onTournamentInput()">
+      <input type="hidden" id="clippdTournamentId">
+      <input type="hidden" id="clippdRoundId">
+      <input type="hidden" id="clippdPlayerId">
+      <div id="tlink-results" class="tlink-results" style="display:none;"></div>
+      <div id="tlink-hint" class="tlink-hint"></div>
+    </div>
+    <div class="field-group">
+      <label>Round #</label>
+      <select id="roundNum" onchange="saveData()">
+        <option>1</option><option>2</option><option>3</option><option>4</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label>Date</label>
+      <input type="date" id="roundDate" oninput="saveData()">
+    </div>
+    <div class="field-group" style="grid-column:span 2">
+      <label>Course Name</label>
+      <input type="text" id="courseName" placeholder="Course Name" oninput="saveData()">
+    </div>
+    <div class="field-group">
+      <label>Course Rating</label>
+      <input type="text" id="rating" placeholder="72.4" oninput="saveData()">
+    </div>
+    <div class="field-group">
+      <label>Slope</label>
+      <input type="text" id="slope" placeholder="135" oninput="saveData()">
+    </div>
+    <div class="field-group">
+      <label>Conditions</label>
+      <select id="conditions" onchange="saveData()">
+        <option value="">—</option>
+        <option>Excellent</option><option>Good</option><option>Fair</option><option>Poor</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label>Weather</label>
+      <select id="weather" onchange="saveData()">
+        <option value="">—</option>
+        <option>Sunny</option><option>Partly Cloudy</option><option>Cloudy</option>
+        <option>Windy</option><option>Rain</option><option>Cold</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- SCORECARD -->
+  <div class="section-label">Hole-by-Hole Statistics</div>
+  <div class="scorecard-wrap">
+  <table class="scorecard" id="scorecardTable">
+    <thead>
+      <tr>
+        <th class="col-hole" rowspan="2">HOLE</th>
+        <th class="col-par"  rowspan="2">PAR</th>
+        <th class="col-hcp"  rowspan="2">HCP</th>
+        <th class="col-score" rowspan="2">SCORE</th>
+        <th class="col-vs"   rowspan="2">+/-</th>
+        <th colspan="1" class="group-header">DRIVING</th>
+        <th colspan="4" class="group-header">APPROACH</th>
+        <th colspan="3" class="group-header">PUTTING</th>
+        <th colspan="2" class="group-header">SCRAMBLING</th>
+        <th colspan="2" class="group-header">SAND</th>
+        <th class="col-pen"  rowspan="2"><span class="col-tip" title="Penalty Strokes">PEN</span></th>
+        <th class="col-notes" rowspan="2">NOTES</th>
+      </tr>
+      <tr>
+        <!-- Driving -->
+        <th class="col-fw"><span class="col-tip" title="Fairway: H=Hit, L=Left, R=Right, N/A=Par 3">FWY</span></th>
+        <!-- Approach -->
+        <th class="col-gir"><span class="col-tip" title="Green in Regulation">GIR</span></th>
+        <th class="col-miss"><span class="col-tip" title="Miss direction when GIR missed: Short, Long, Left, Right">MISS DIR</span></th>
+        <th class="col-drive"><span class="col-tip" title="Drive Distance (yards)">DRIVE YDS</span></th>
+        <th class="col-prox"><span class="col-tip" title="Proximity to hole from approach (feet)">PROX (ft)</span></th>
+        <!-- Putting -->
+        <th class="col-putts">PUTTS</th>
+        <th class="col-appd"><span class="col-tip" title="First putt distance (feet)">1st PUTT</span></th>
+        <th class="col-appd"><span class="col-tip" title="3-putt? Y/N">3-PUTT</span></th>
+        <!-- Scrambling -->
+        <th class="col-ud"><span class="col-tip" title="Up & Down attempt (missed GIR only)">U&D ATT</span></th>
+        <th class="col-ud"><span class="col-tip" title="Up & Down made">U&D MADE</span></th>
+        <!-- Sand -->
+        <th class="col-ss"><span class="col-tip" title="Sand Save attempt">SS ATT</span></th>
+        <th class="col-ss"><span class="col-tip" title="Sand Save made">SS MADE</span></th>
+      </tr>
+    </thead>
+    <tbody id="scorecardBody">
+      <!-- Rows generated by JS -->
+    </tbody>
+  </table>
+  </div>
+
+  <!-- SCORING BREAKDOWN -->
+  <div class="scoring-breakdown">
+    <strong style="font-size:10px;margin-right:6px;text-transform:uppercase;letter-spacing:.5px;">Scoring:</strong>
+    <span class="score-pill pill-eagle">
+      <span class="dot" style="background:var(--eagle);border:1px solid #b8860b;"></span>
+      Eagle: <span id="cnt-eagle" style="margin-left:4px;">—</span>
+    </span>
+    <span class="score-pill pill-birdie">
+      <span class="dot" style="background:var(--birdie);"></span>
+      Birdie: <span id="cnt-birdie" style="margin-left:4px;">—</span>
+    </span>
+    <span class="score-pill pill-par">
+      <span class="dot" style="background:#bbb;"></span>
+      Par: <span id="cnt-par" style="margin-left:4px;">—</span>
+    </span>
+    <span class="score-pill pill-bogey">
+      <span class="dot" style="background:var(--bogey);"></span>
+      Bogey: <span id="cnt-bogey" style="margin-left:4px;">—</span>
+    </span>
+    <span class="score-pill pill-double">
+      <span class="dot" style="background:var(--double);"></span>
+      Double: <span id="cnt-double" style="margin-left:4px;">—</span>
+    </span>
+    <span class="score-pill pill-worse">
+      <span class="dot" style="background:var(--worse);"></span>
+      Triple+: <span id="cnt-worse" style="margin-left:4px;">—</span>
+    </span>
+    <span style="margin-left:auto;font-size:10px;color:#666;">
+      Front 9: <strong id="front9-score">—</strong> &nbsp;|&nbsp;
+      Back 9: <strong id="back9-score">—</strong> &nbsp;|&nbsp;
+      Total: <strong id="total-score-display">—</strong>
+    </span>
+  </div>
+
+  <!-- SUMMARY STATS GRID -->
+  <div class="section-label" style="margin-top:0;">Round Summary Statistics</div>
+  <div class="summary-grid">
+
+    <!-- SCORING -->
+    <div class="stat-box">
+      <h3>Scoring</h3>
+      <div class="stat-row"><span class="lbl">Total Score</span><span class="val" id="s-total">—</span></div>
+      <div class="stat-row"><span class="lbl">vs. Par</span><span class="val" id="s-vspar">—</span></div>
+      <div class="stat-row"><span class="lbl">Front 9</span><span class="val" id="s-front">—</span></div>
+      <div class="stat-row"><span class="lbl">Back 9</span><span class="val" id="s-back">—</span></div>
+      <div class="stat-row"><span class="lbl">Course Par</span><span class="val" id="s-cpar">—</span></div>
+      <div class="stat-row"><span class="lbl">Penalty Strokes</span><span class="val" id="s-pen">—</span></div>
+    </div>
+
+    <!-- DRIVING -->
+    <div class="stat-box">
+      <h3>Driving</h3>
+      <div class="stat-row"><span class="lbl">Fairways Hit</span><span class="val" id="s-fw-hit">—</span></div>
+      <div class="stat-row"><span class="lbl">Fairways Attempted</span><span class="val" id="s-fw-att">—</span></div>
+      <div class="stat-row"><span class="lbl">Fairway %</span><span class="val" id="s-fw-pct">—</span></div>
+      <div class="stat-row"><span class="lbl">Avg Drive Distance</span><span class="val" id="s-drive-avg">—</span></div>
+      <div class="stat-row"><span class="lbl">Longest Drive</span><span class="val" id="s-drive-max">—</span></div>
+    </div>
+
+    <!-- APPROACH / GIR -->
+    <div class="stat-box">
+      <h3>Approach / GIR</h3>
+      <div class="stat-row"><span class="lbl">Greens in Regulation</span><span class="val" id="s-gir-hit">—</span></div>
+      <div class="stat-row"><span class="lbl">GIR %</span><span class="val" id="s-gir-pct">—</span></div>
+      <div class="stat-row"><span class="lbl">Avg Proximity (ft)</span><span class="val" id="s-prox-avg">—</span></div>
+      <div class="stat-row"><span class="lbl">Avg Proximity — GIR</span><span class="val" id="s-prox-gir">—</span></div>
+      <div class="stat-row"><span class="lbl">Avg Proximity — Missed</span><span class="val" id="s-prox-miss">—</span></div>
+    </div>
+
+    <!-- PUTTING -->
+    <div class="stat-box">
+      <h3>Putting</h3>
+      <div class="stat-row"><span class="lbl">Total Putts</span><span class="val" id="s-putts">—</span></div>
+      <div class="stat-row"><span class="lbl">Putts / Round</span><span class="val" id="s-putts-round">—</span></div>
+      <div class="stat-row"><span class="lbl">Putts / GIR Hole</span><span class="val" id="s-putts-gir">—</span></div>
+      <div class="stat-row"><span class="lbl">Putts / Hole</span><span class="val" id="s-putts-hole">—</span></div>
+      <div class="stat-row"><span class="lbl">1-Putts</span><span class="val" id="s-1putt">—</span></div>
+      <div class="stat-row"><span class="lbl">3-Putts</span><span class="val" id="s-3putt">—</span></div>
+    </div>
+
+    <!-- SCRAMBLING -->
+    <div class="stat-box">
+      <h3>Scrambling</h3>
+      <div class="stat-row"><span class="lbl">Up & Down Attempts</span><span class="val" id="s-ud-att">—</span></div>
+      <div class="stat-row"><span class="lbl">Up & Down Made</span><span class="val" id="s-ud-made">—</span></div>
+      <div class="stat-row"><span class="lbl">Scrambling %</span><span class="val" id="s-scram-pct">—</span></div>
+      <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;">
+        Scrambling = Up & Down when GIR missed
+      </div>
+    </div>
+
+    <!-- SAND SAVES -->
+    <div class="stat-box">
+      <h3>Sand Saves</h3>
+      <div class="stat-row"><span class="lbl">Sand Save Attempts</span><span class="val" id="s-ss-att">—</span></div>
+      <div class="stat-row"><span class="lbl">Sand Saves Made</span><span class="val" id="s-ss-made">—</span></div>
+      <div class="stat-row"><span class="lbl">Sand Save %</span><span class="val" id="s-ss-pct">—</span></div>
+    </div>
+
+    <!-- PAR PERFORMANCE -->
+    <div class="stat-box">
+      <h3>Par Performance</h3>
+      <div class="stat-row"><span class="lbl">Par 3 Avg</span><span class="val" id="s-par3">—</span></div>
+      <div class="stat-row"><span class="lbl">Par 4 Avg</span><span class="val" id="s-par4">—</span></div>
+      <div class="stat-row"><span class="lbl">Par 5 Avg</span><span class="val" id="s-par5">—</span></div>
+      <div class="stat-row" style="margin-top:6px;border-top:1px solid #eee;padding-top:4px;"><span class="lbl">GIR on Par 3s</span><span class="val" id="s-gir3">—</span></div>
+      <div class="stat-row"><span class="lbl">GIR on Par 4s</span><span class="val" id="s-gir4">—</span></div>
+      <div class="stat-row"><span class="lbl">GIR on Par 5s</span><span class="val" id="s-gir5">—</span></div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="stat-box">
+      <h3>Round Notes</h3>
+      <textarea id="roundNotes" style="width:100%;height:100px;border:1px solid #ccc;border-radius:2px;padding:4px;font-size:10px;resize:vertical;" placeholder="Key observations, missed opportunities, areas to work on..." oninput="saveData()"></textarea>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="page-footer">
+    <span>Stat Caddie · Round Capture · Individual Statistics Form</span>
+    <span id="footer-player"></span>
+    <span id="footer-date"></span>
+  </div>
+
+</div><!-- end .page -->
+
+<script>
+// ─── CONSTANTS ───────────────────────────────────────
+const HOLES = 18;
+const FW_OPTIONS = ['—','H','L','R','N/A'];
+const YN_OPTIONS = ['—','Y','N'];
+
+// ─── BUILD TABLE ─────────────────────────────────────
+function buildTable() {
+  const tbody = document.getElementById('scorecardBody');
+  tbody.innerHTML = '';
+
+  for (let h = 1; h <= HOLES; h++) {
+    const tr = document.createElement('tr');
+    tr.id = `row-${h}`;
+    tr.innerHTML = `
+      <td class="col-hole"><strong>${h}</strong></td>
+      <td class="col-par">
+        <select onchange="calc();saveData()" id="par-${h}" style="font-weight:700;">
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="5">5</option>
+        </select>
+      </td>
+      <td class="col-hcp"><input type="number" id="hcp-${h}" min="1" max="18" placeholder="—" oninput="saveData()"></td>
+      <td class="col-score score-cell"><input type="number" id="score-${h}" min="1" max="15" placeholder="—" oninput="calc();saveData()" style="font-weight:700;font-size:12px;"></td>
+      <td class="col-vs" id="vs-${h}" style="font-weight:700;"></td>
+      <td class="col-fw">
+        <select class="fw-select" id="fw-${h}" onchange="handleFwGir(${h});calc();saveData()">
+          ${FW_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-gir">
+        <select class="gir-select" id="gir-${h}" onchange="handleFwGir(${h});calc();saveData()">
+          ${YN_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-miss">
+        <select class="miss-select" id="miss-${h}" onchange="saveData()" disabled>
+          <option value="—">—</option>
+          <option value="Sh">Short</option>
+          <option value="Lo">Long</option>
+          <option value="L">Left</option>
+          <option value="R">Right</option>
+        </select>
+      </td>
+      <td class="col-drive"><input type="number" id="drive-${h}" min="0" max="450" placeholder="—" oninput="calc();saveData()"></td>
+      <td class="col-prox"><input type="number" id="prox-${h}" min="0" max="9999" placeholder="—" oninput="calc();saveData()" step="0.1"></td>
+      <td class="col-putts"><input type="number" id="putts-${h}" min="0" max="9" placeholder="—" oninput="calc();saveData()"></td>
+      <td class="col-appd"><input type="number" id="firstputt-${h}" min="0" max="200" placeholder="—" oninput="calc();saveData()" step="0.5"></td>
+      <td class="col-appd">
+        <select id="threeputt-${h}" onchange="calc();saveData()">
+          ${YN_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-ud">
+        <select id="ud-att-${h}" onchange="handleUd(${h});calc();saveData()">
+          ${YN_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-ud">
+        <select id="ud-made-${h}" onchange="calc();saveData()">
+          ${YN_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-ss">
+        <select id="ss-att-${h}" onchange="calc();saveData()">
+          ${YN_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-ss">
+        <select id="ss-made-${h}" onchange="calc();saveData()">
+          ${YN_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-pen"><input type="number" id="pen-${h}" min="0" max="9" placeholder="0" oninput="calc();saveData()"></td>
+      <td class="col-notes"><input type="text" id="notes-${h}" placeholder="…" oninput="saveData()" style="text-align:left;padding:2px 4px;"></td>
+    `;
+    tbody.appendChild(tr);
+
+    // Insert subtotal after hole 9
+    if (h === 9) {
+      const outRow = document.createElement('tr');
+      outRow.className = 'subtotal';
+      outRow.id = 'row-out';
+      outRow.innerHTML = buildSubtotalRow('OUT');
+      tbody.appendChild(outRow);
+    }
+  }
+
+  // IN subtotal
+  const inRow = document.createElement('tr');
+  inRow.className = 'subtotal';
+  inRow.id = 'row-in';
+  inRow.innerHTML = buildSubtotalRow('IN');
+  tbody.appendChild(inRow);
+
+  // TOTAL row
+  const totRow = document.createElement('tr');
+  totRow.className = 'total-row';
+  totRow.id = 'row-tot';
+  totRow.innerHTML = buildSubtotalRow('TOT');
+  tbody.appendChild(totRow);
+}
+
+function buildSubtotalRow(label) {
+  return `
+    <td colspan="3"><strong>${label}</strong></td>
+    <td id="${label.toLowerCase()}-score" style="font-weight:700;font-size:13px;"></td>
+    <td id="${label.toLowerCase()}-vs" style="font-weight:700;"></td>
+    <td id="${label.toLowerCase()}-fw"></td>
+    <td id="${label.toLowerCase()}-gir"></td>
+    <td></td>
+    <td id="${label.toLowerCase()}-drive"></td>
+    <td id="${label.toLowerCase()}-prox"></td>
+    <td id="${label.toLowerCase()}-putts"></td>
+    <td colspan="3"></td>
+    <td id="${label.toLowerCase()}-ud"></td>
+    <td id="${label.toLowerCase()}-ss"></td>
+    <td id="${label.toLowerCase()}-pen"></td>
+    <td></td>
+  `;
+}
+
+// ─── SMART DEFAULTS ──────────────────────────────────
+function handleFwGir(h) {
+  const par = getPar(h);
+  const fw  = getVal(`fw-${h}`);
+  const gir = getVal(`gir-${h}`);
+  const missEl = document.getElementById(`miss-${h}`);
+
+  // Par 3: auto-set FW to N/A
+  if (par === 3 && fw === '—') {
+    document.getElementById(`fw-${h}`).value = 'N/A';
+  }
+
+  // Miss direction: enable only when GIR = N, auto-clear when GIR = Y or unset
+  if (gir === 'N') {
+    missEl.disabled = false;
+  } else {
+    missEl.disabled = true;
+    missEl.value = '—';
+  }
+
+  // If GIR=Y, disable U&D
+  if (gir === 'Y') {
+    document.getElementById(`ud-att-${h}`).value = '—';
+    document.getElementById(`ud-made-${h}`).value = '—';
+  }
+}
+
+function handleUd(h) {
+  const att = getVal(`ud-att-${h}`);
+  if (att === 'N' || att === '—') {
+    document.getElementById(`ud-made-${h}`).value = '—';
+  }
+}
+
+// ─── HELPERS ─────────────────────────────────────────
+function getVal(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+function getNum(id) {
+  const v = parseFloat(getVal(id));
+  return isNaN(v) ? null : v;
+}
+function getPar(h) {
+  return parseInt(getVal(`par-${h}`)) || 4;
+}
+function pct(a, b) {
+  if (!b) return '—';
+  return (100 * a / b).toFixed(1) + '%';
+}
+function avg(sum, cnt) {
+  if (!cnt) return '—';
+  return (sum / cnt).toFixed(1);
+}
+function fmtVsPar(diff) {
+  if (diff === 0) return 'E';
+  return diff > 0 ? '+' + diff : '' + diff;
+}
+function scoreClass(diff) {
+  if (diff <= -2) return 'eagle';
+  if (diff === -1) return 'birdie';
+  if (diff === 0)  return 'par';
+  if (diff === 1)  return 'bogey';
+  if (diff === 2)  return 'double';
+  return 'worse';
+}
+
+// ─── MAIN CALC ───────────────────────────────────────
+function calc() {
+  let totalScore = 0, totalPar = 0;
+  let frontScore = 0, backScore = 0, frontPar = 0, backPar = 0;
+  let fwHit = 0, fwAtt = 0;
+  let girHit = 0;
+  let proxSum = 0, proxCnt = 0, proxGirSum = 0, proxGirCnt = 0, proxMissSum = 0, proxMissCnt = 0;
+  let puttsTotal = 0, puttsCnt = 0, puttsGirSum = 0, puttsGirCnt = 0;
+  let onePutts = 0, threePutts = 0;
+  let driveSum = 0, driveCnt = 0, driveMax = 0;
+  let udAtt = 0, udMade = 0;
+  let ssAtt = 0, ssMade = 0;
+  let penTotal = 0;
+  let eagles = 0, birdies = 0, pars = 0, bogeys = 0, doubles = 0, worses = 0;
+  let par3Scores = [], par4Scores = [], par5Scores = [];
+  let par3Gir = [0,0], par4Gir = [0,0], par5Gir = [0,0]; // [hit, total]
+
+  // OUT / IN accumulators
+  let outScore=0,outPar=0,outFwH=0,outFwA=0,outGir=0,outPutts=0,outPuttsCnt=0,outDriveSum=0,outDriveCnt=0,outProxSum=0,outProxCnt=0,outUd=0,outUdM=0,outSs=0,outSsM=0,outPen=0;
+  let inScore=0,inPar=0,inFwH=0,inFwA=0,inGir=0,inPutts=0,inPuttsCnt=0,inDriveSum=0,inDriveCnt=0,inProxSum=0,inProxCnt=0,inUd=0,inUdM=0,inSs=0,inSsM=0,inPen=0;
+
+  for (let h = 1; h <= HOLES; h++) {
+    const par = getPar(h);
+    const score = getNum(`score-${h}`);
+    const fw = getVal(`fw-${h}`);
+    const gir = getVal(`gir-${h}`);
+    const drive = getNum(`drive-${h}`);
+    const prox = getNum(`prox-${h}`);
+    const putts = getNum(`putts-${h}`);
+    const firstPutt = getNum(`firstputt-${h}`);
+    const threePutt = getVal(`threeputt-${h}`);
+    const udA = getVal(`ud-att-${h}`);
+    const udM = getVal(`ud-made-${h}`);
+    const ssA = getVal(`ss-att-${h}`);
+    const ssM = getVal(`ss-made-${h}`);
+    const pen = getNum(`pen-${h}`) || 0;
+    const isFront = h <= 9;
+
+    totalPar += par;
+    if (isFront) frontPar += par; else backPar += par;
+
+    // Par type tracking
+    if (par === 3) par3Gir[1]++;
+    else if (par === 4) par4Gir[1]++;
+    else par5Gir[1]++;
+
+    // vs par & score color
+    const vsEl = document.getElementById(`vs-${h}`);
+    if (score !== null) {
+      const diff = score - par;
+      const cls = scoreClass(diff);
+      vsEl.textContent = fmtVsPar(diff);
+      vsEl.style.color = cls === 'birdie' ? '#c0392b' : cls === 'eagle' ? '#b8860b' : cls === 'bogey' ? '#2c6fad' : cls === 'double' || cls === 'worse' ? '#1a3a5c' : '#444';
+
+      // Score bubble in score cell
+      const scoreInput = document.getElementById(`score-${h}`);
+      scoreInput.style.color = cls === 'birdie' || cls === 'eagle' ? '#c0392b' : cls === 'bogey' ? '#2c6fad' : cls === 'double' || cls === 'worse' ? '#1a3a5c' : '#111';
+
+      totalScore += score;
+      if (isFront) { frontScore += score; } else { backScore += score; }
+      if (diff <= -2) eagles++; else if (diff === -1) birdies++; else if (diff === 0) pars++; else if (diff === 1) bogeys++; else if (diff === 2) doubles++; else worses++;
+
+      // Par type scores
+      if (par === 3) par3Scores.push(score);
+      else if (par === 4) par4Scores.push(score);
+      else par5Scores.push(score);
+    } else {
+      vsEl.textContent = '';
+    }
+
+    // Fairway
+    if (fw === 'H') { fwHit++; fwAtt++; if(isFront) {outFwH++;outFwA++;} else {inFwH++;inFwA++;} }
+    else if (fw === 'L' || fw === 'R') { fwAtt++; if(isFront) outFwA++; else inFwA++; }
+
+    // GIR
+    if (gir === 'Y') {
+      girHit++;
+      if (isFront) outGir++; else inGir++;
+      if (par === 3) par3Gir[0]++;
+      else if (par === 4) par4Gir[0]++;
+      else par5Gir[0]++;
+    }
+
+    // Drive
+    if (drive !== null && fw !== 'N/A' && fw !== '—') {
+      driveSum += drive; driveCnt++;
+      if (drive > driveMax) driveMax = drive;
+      if (isFront) { outDriveSum+=drive; outDriveCnt++; } else { inDriveSum+=drive; inDriveCnt++; }
+    }
+
+    // Proximity
+    if (prox !== null) {
+      proxSum += prox; proxCnt++;
+      if (isFront) { outProxSum+=prox; outProxCnt++; } else { inProxSum+=prox; inProxCnt++; }
+      if (gir === 'Y') { proxGirSum += prox; proxGirCnt++; }
+      else { proxMissSum += prox; proxMissCnt++; }
+    }
+
+    // Putts
+    if (putts !== null) {
+      puttsTotal += putts; puttsCnt++;
+      if (isFront) { outPutts+=putts; outPuttsCnt++; } else { inPutts+=putts; inPuttsCnt++; }
+      if (gir === 'Y') { puttsGirSum += putts; puttsGirCnt++; }
+      if (putts === 1) onePutts++;
+    }
+    if (threePutt === 'Y') { threePutts++; }
+
+    // U&D
+    if (udA === 'Y') { udAtt++; if(isFront) outUd++; else inUd++; }
+    if (udM === 'Y') { udMade++; if(isFront) outUdM++; else inUdM++; }
+
+    // Sand Saves
+    if (ssA === 'Y') { ssAtt++; if(isFront) outSs++; else inSs++; }
+    if (ssM === 'Y') { ssMade++; if(isFront) outSsM++; else inSsM++; }
+
+    // Penalties
+    penTotal += pen;
+    if (isFront) outPen += pen; else inPen += pen;
+
+    // Front/Back score accumulation
+    if (isFront) outScore += (score||0); else inScore += (score||0);
+    if (isFront) outPar += par; else inPar += par;
+  }
+
+  // ── Update subtotal rows ──
+  updateSubtotal('out', outScore, outPar, outFwH, outFwA, outGir, 9, outPutts, outPuttsCnt, outDriveSum, outDriveCnt, outProxSum, outProxCnt, outUd, outUdM, outSs, outSsM, outPen);
+  updateSubtotal('in',  inScore,  inPar,  inFwH,  inFwA,  inGir,  9, inPutts,  inPuttsCnt,  inDriveSum,  inDriveCnt,  inProxSum,  inProxCnt,  inUd,  inUdM,  inSs,  inSsM,  inPen);
+  updateSubtotal('tot', totalScore, totalPar, fwHit, fwAtt, girHit, 18, puttsTotal, puttsCnt, driveSum, driveCnt, proxSum, proxCnt, udAtt, udMade, ssAtt, ssMade, penTotal);
+
+  // ── Update summary ──
+  const hasScores = pars+birdies+eagles+bogeys+doubles+worses > 0;
+
+  setText('s-total',    hasScores ? totalScore : '—');
+  setText('s-vspar',    hasScores ? fmtVsPar(totalScore - totalPar) : '—');
+  setText('s-front',    frontScore || '—');
+  setText('s-back',     backScore || '—');
+  setText('s-cpar',     totalPar || '—');
+  setText('s-pen',      penTotal || 0);
+
+  setText('s-fw-hit',   fwHit);
+  setText('s-fw-att',   fwAtt);
+  setText('s-fw-pct',   pct(fwHit, fwAtt));
+  setText('s-drive-avg', driveCnt ? avg(driveSum, driveCnt) + ' yds' : '—');
+  setText('s-drive-max', driveMax ? driveMax + ' yds' : '—');
+
+  setText('s-gir-hit',  girHit);
+  setText('s-gir-pct',  pct(girHit, 18));
+  setText('s-prox-avg', proxCnt ? avg(proxSum, proxCnt) + ' ft' : '—');
+  setText('s-prox-gir', proxGirCnt ? avg(proxGirSum, proxGirCnt) + ' ft' : '—');
+  setText('s-prox-miss', proxMissCnt ? avg(proxMissSum, proxMissCnt) + ' ft' : '—');
+
+  setText('s-putts',     puttsCnt ? puttsTotal : '—');
+  setText('s-putts-round', puttsCnt ? puttsTotal : '—');
+  setText('s-putts-gir', puttsGirCnt ? avg(puttsGirSum, puttsGirCnt) : '—');
+  setText('s-putts-hole', puttsCnt ? avg(puttsTotal, puttsCnt) : '—');
+  setText('s-1putt',    onePutts);
+  setText('s-3putt',    threePutts);
+
+  setText('s-ud-att',   udAtt);
+  setText('s-ud-made',  udMade);
+  setText('s-scram-pct', pct(udMade, udAtt));
+
+  setText('s-ss-att',   ssAtt);
+  setText('s-ss-made',  ssMade);
+  setText('s-ss-pct',   pct(ssMade, ssAtt));
+
+  setText('s-par3', par3Scores.length ? avg(par3Scores.reduce((a,b)=>a+b,0), par3Scores.length) : '—');
+  setText('s-par4', par4Scores.length ? avg(par4Scores.reduce((a,b)=>a+b,0), par4Scores.length) : '—');
+  setText('s-par5', par5Scores.length ? avg(par5Scores.reduce((a,b)=>a+b,0), par5Scores.length) : '—');
+  setText('s-gir3', par3Gir[1] ? pct(par3Gir[0], par3Gir[1]) : '—');
+  setText('s-gir4', par4Gir[1] ? pct(par4Gir[0], par4Gir[1]) : '—');
+  setText('s-gir5', par5Gir[1] ? pct(par5Gir[0], par5Gir[1]) : '—');
+
+  // Scoring breakdown
+  setText('cnt-eagle',  eagles || '—');
+  setText('cnt-birdie', birdies || '—');
+  setText('cnt-par',    pars || '—');
+  setText('cnt-bogey',  bogeys || '—');
+  setText('cnt-double', doubles || '—');
+  setText('cnt-worse',  worses || '—');
+
+  setText('front9-score', frontScore || '—');
+  setText('back9-score',  backScore || '—');
+  setText('total-score-display', hasScores ? totalScore : '—');
+
+  // Footer
+  const player = getVal('playerName');
+  const date = getVal('roundDate');
+  setText('footer-player', player);
+  setText('footer-date', date);
+}
+
+function updateSubtotal(pfx, score, par, fwH, fwA, gir, holes, putts, puttsCnt, driveSum, driveCnt, proxSum, proxCnt, udAtt, udMade, ssAtt, ssMade, pen) {
+  setTextSafe(`${pfx}-score`, score || '');
+  setTextSafe(`${pfx}-vs`, score && par ? fmtVsPar(score-par) : '');
+  setTextSafe(`${pfx}-fw`, fwA ? `${fwH}/${fwA}` : '');
+  setTextSafe(`${pfx}-gir`, `${gir}/${holes}`);
+  setTextSafe(`${pfx}-putts`, puttsCnt ? putts : '');
+  setTextSafe(`${pfx}-drive`, driveCnt ? Math.round(driveSum/driveCnt)+'y' : '');
+  setTextSafe(`${pfx}-prox`, proxCnt ? Math.round(proxSum/proxCnt)+"'" : '');
+  setTextSafe(`${pfx}-ud`, udAtt ? `${udMade}/${udAtt}` : '');
+  setTextSafe(`${pfx}-ss`, ssAtt ? `${ssMade}/${ssAtt}` : '');
+  setTextSafe(`${pfx}-pen`, pen || '');
+}
+
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+function setTextSafe(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+// ─── SAVE / LOAD (DRAFT) ─────────────────────────────
+const HEADER_FIELDS = ['playerName','tournament','roundNum','roundDate','courseName','rating','slope','conditions','weather','roundNotes','clippdTournamentId','clippdRoundId','clippdPlayerId'];
+const HOLE_FIELDS   = ['par','hcp','score','fw','gir','miss','drive','prox','putts','firstputt','threeputt','ud-att','ud-made','ss-att','ss-made','pen','notes'];
+
+function collectFormData() {
+  const data = {};
+  HEADER_FIELDS.forEach(id => { data[id] = getVal(id); });
+  for (let h = 1; h <= HOLES; h++) {
+    HOLE_FIELDS.forEach(f => { data[`${f}-${h}`] = getVal(`${f}-${h}`); });
+  }
+  return data;
+}
+
+function saveData() {
+  const data = collectFormData();
+  try { localStorage.setItem('statcaddieDraft', JSON.stringify(data)); } catch(e) {}
+  calc();
+  setText('footer-player', getVal('playerName'));
+  setText('footer-date', getVal('roundDate'));
+}
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem('statcaddieDraft');
+    if (!raw) return;
+    applyFormData(JSON.parse(raw));
+    calc();
+  } catch(e) {}
+}
+
+function applyFormData(data) {
+  HEADER_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && data[id] !== undefined) el.value = data[id];
+  });
+  for (let h = 1; h <= HOLES; h++) {
+    HOLE_FIELDS.forEach(f => {
+      const el = document.getElementById(`${f}-${h}`);
+      if (el && data[`${f}-${h}`] !== undefined) el.value = data[`${f}-${h}`];
+    });
+    // Restore miss dropdown enabled state based on loaded GIR value
+    handleFwGir(h);
+  }
+  // Restore the Scoreboard link badge if this draft was linked to an event.
+  if (getVal('clippdTournamentId')) { _tLinkedName = getVal('tournament'); showTLinkBadge(); }
+}
+
+function clearAll() {
+  if (!confirm('Start a new round? This will clear the current draft (committed rounds are NOT affected).')) return;
+  try { localStorage.removeItem('statcaddieDraft'); } catch(e) {}
+  location.reload();
+}
+
+// ─── COMPUTE SUMMARY STATS ───────────────────────────
+function computeSummary() {
+  let totalScore=0, totalPar=0, frontScore=0, backScore=0, frontPar=0, backPar=0;
+  let fwHit=0, fwAtt=0, girHit=0;
+  let proxSum=0, proxCnt=0, proxGirSum=0, proxGirCnt=0, proxMissSum=0, proxMissCnt=0;
+  let puttsTotal=0, puttsCnt=0, puttsGirSum=0, puttsGirCnt=0;
+  let onePutts=0, threePutts=0;
+  let driveSum=0, driveCnt=0, driveMax=0;
+  let udAtt=0, udMade=0, ssAtt=0, ssMade=0, penTotal=0;
+  let eagles=0, birdies=0, pars=0, bogeys=0, doubles=0, worses=0;
+  let par3s=[], par4s=[], par5s=[];
+  let par3Gir=[0,0], par4Gir=[0,0], par5Gir=[0,0];
+  let holesPlayed=0;
+
+  for (let h = 1; h <= HOLES; h++) {
+    const par   = getPar(h);
+    const score = getNum(`score-${h}`);
+    const fw    = getVal(`fw-${h}`);
+    const gir   = getVal(`gir-${h}`);
+    const drive = getNum(`drive-${h}`);
+    const prox  = getNum(`prox-${h}`);
+    const putts = getNum(`putts-${h}`);
+    const tp    = getVal(`threeputt-${h}`);
+    const udA   = getVal(`ud-att-${h}`);
+    const udM   = getVal(`ud-made-${h}`);
+    const ssA   = getVal(`ss-att-${h}`);
+    const ssM   = getVal(`ss-made-${h}`);
+    const pen   = getNum(`pen-${h}`) || 0;
+    const isFront = h <= 9;
+
+    totalPar += par;
+    if (isFront) frontPar += par; else backPar += par;
+    if (par===3) par3Gir[1]++; else if (par===4) par4Gir[1]++; else par5Gir[1]++;
+
+    if (score !== null) {
+      holesPlayed++;
+      totalScore += score;
+      if (isFront) frontScore += score; else backScore += score;
+      const diff = score - par;
+      if (diff<=-2) eagles++; else if (diff===-1) birdies++; else if (diff===0) pars++; else if (diff===1) bogeys++; else if (diff===2) doubles++; else worses++;
+      if (par===3) par3s.push(score); else if (par===4) par4s.push(score); else par5s.push(score);
+    }
+
+    if (fw==='H') { fwHit++; fwAtt++; }
+    else if (fw==='L'||fw==='R') fwAtt++;
+
+    if (gir==='Y') {
+      girHit++;
+      if (par===3) par3Gir[0]++; else if (par===4) par4Gir[0]++; else par5Gir[0]++;
+    }
+
+    if (drive!==null && fw!=='N/A' && fw!=='—') {
+      driveSum+=drive; driveCnt++;
+      if (drive>driveMax) driveMax=drive;
+    }
+    if (prox!==null) {
+      proxSum+=prox; proxCnt++;
+      if (gir==='Y') { proxGirSum+=prox; proxGirCnt++; }
+      else { proxMissSum+=prox; proxMissCnt++; }
+    }
+    if (putts!==null) {
+      puttsTotal+=putts; puttsCnt++;
+      if (gir==='Y') { puttsGirSum+=putts; puttsGirCnt++; }
+      if (putts===1) onePutts++;
+    }
+    if (tp==='Y') threePutts++;
+    if (udA==='Y') udAtt++;
+    if (udM==='Y') udMade++;
+    if (ssA==='Y') ssAtt++;
+    if (ssM==='Y') ssMade++;
+    penTotal += pen;
+  }
+
+  const r2 = v => Math.round(v*100)/100;
+  return {
+    holesPlayed,
+    totalScore, totalPar, vspar: totalScore - totalPar,
+    frontScore, backScore, frontPar, backPar,
+    fwHit, fwAtt, fwPct: fwAtt ? r2(fwHit/fwAtt*100) : null,
+    girHit, girPct: r2(girHit/18*100),
+    proxAvg:     proxCnt     ? r2(proxSum/proxCnt)     : null,
+    proxGirAvg:  proxGirCnt  ? r2(proxGirSum/proxGirCnt)  : null,
+    proxMissAvg: proxMissCnt ? r2(proxMissSum/proxMissCnt) : null,
+    puttsTotal, puttsPerHole: puttsCnt ? r2(puttsTotal/puttsCnt) : null,
+    puttsPerGir: puttsGirCnt ? r2(puttsGirSum/puttsGirCnt) : null,
+    onePutts, threePutts,
+    driveAvg: driveCnt ? Math.round(driveSum/driveCnt) : null,
+    driveMax: driveMax || null,
+    udAtt, udMade, scramblingPct: udAtt ? r2(udMade/udAtt*100) : null,
+    ssAtt, ssMade, ssPct: ssAtt ? r2(ssMade/ssAtt*100) : null,
+    penTotal,
+    eagles, birdies, pars, bogeys, doubles, worses,
+    par3Avg: par3s.length ? r2(par3s.reduce((a,b)=>a+b,0)/par3s.length) : null,
+    par4Avg: par4s.length ? r2(par4s.reduce((a,b)=>a+b,0)/par4s.length) : null,
+    par5Avg: par5s.length ? r2(par5s.reduce((a,b)=>a+b,0)/par5s.length) : null,
+    par3GirPct: par3Gir[1] ? r2(par3Gir[0]/par3Gir[1]*100) : null,
+    par4GirPct: par4Gir[1] ? r2(par4Gir[0]/par4Gir[1]*100) : null,
+    par5GirPct: par5Gir[1] ? r2(par5Gir[0]/par5Gir[1]*100) : null,
+  };
+}
+
+// ─── COMMIT ROUND TO LOG ─────────────────────────────
+async function commitRound() {
+  const player = getVal('playerName');
+  const date   = getVal('roundDate');
+  const course = getVal('courseName');
+  if (!player) { alert('Please enter the player name before committing.'); return; }
+  if (!date)   { alert('Please enter the round date before committing.'); return; }
+
+  const summary = computeSummary();
+  if (summary.holesPlayed < 9) {
+    if (!confirm(`Only ${summary.holesPlayed} hole(s) have scores. Commit anyway?`)) return;
+  }
+
+  const roundRecord = {
+    id:          Date.now(),
+    savedAt:     new Date().toISOString(),
+    playerName:  player,
+    tournament:  getVal('tournament'),
+    roundNum:    parseInt(getVal('roundNum')) || 1,
+    roundDate:   date,
+    courseName:  course,
+    rating:      getVal('rating'),
+    slope:       getVal('slope'),
+    conditions:  getVal('conditions'),
+    weather:     getVal('weather'),
+    roundNotes:  getVal('roundNotes'),
+    // Scoreboard identity — stamped when the event was picked from the synced
+    // catalog. Makes official-result matching deterministic (vs. fuzzy text).
+    clippdTournamentId: getVal('clippdTournamentId') || null,
+    clippdRoundId:      getVal('clippdRoundId') || null,
+    clippdPlayerId:     getVal('clippdPlayerId') || null,
+    summary,
+    holeData:    collectFormData(),
+  };
+
+  const status = document.getElementById('save-status');
+
+  // 1) Always keep a local copy (offline / standalone use).
+  let localCount = 0;
+  try {
+    const existing = JSON.parse(localStorage.getItem('statcaddieRounds') || '[]');
+    existing.push(roundRecord);
+    localStorage.setItem('statcaddieRounds', JSON.stringify(existing));
+    localCount = existing.length;
+  } catch (e) {
+    alert('Error saving round locally: ' + e.message);
+    return;
+  }
+
+  // 2) When signed in (same-origin app), sync to the account so it runs through
+  //    the reconciliation engine. Degrades silently to local-only if offline.
+  try {
+    const res = await fetch('/api/rounds', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(roundRecord),
+    });
+    if (res.ok) {
+      const { status: st } = await res.json().catch(() => ({}));
+      const note = ({
+        confirmed:  'matched to the official score ✓',
+        conflict:   '⚠ your total differs from the official score — review in Reports',
+        stats_only: 'saved — awaiting the official score from Scoreboard',
+        score_only: 'saved',
+      })[st] || 'synced to your account';
+      status.innerHTML = `✅ Round committed &amp; ${note}. <a href="statcaddie_dashboard.html" target="_blank">Open Dashboard →</a>`;
+      status.style.color = st === 'conflict' ? '#9a3b2f' : '#2d5c3e';
+      return;
+    }
+    if (res.status === 401) {
+      status.innerHTML = `✅ Saved locally (${localCount} in log). Sign in to sync to your account.`;
+      status.style.color = '#2d5c3e';
+      return;
+    }
+    throw new Error('sync failed (' + res.status + ')');
+  } catch (e) {
+    // Network error or running standalone — local save already succeeded.
+    status.innerHTML = `✅ Saved locally (${localCount} in log) — not synced (offline). <a href="statcaddie_dashboard.html" target="_blank">Open Dashboard →</a>`;
+    status.style.color = '#2d5c3e';
+  }
+}
+
+// ─── SCOREBOARD TOURNAMENT PICKER ────────────────────
+// Turns the Tournament field into a search over the synced Scoreboard catalog.
+// Picking an event stamps clippd_tournament_id so official results match this
+// round deterministically. Typing freely (no pick) keeps it a manual entry, and
+// if the catalog is unreachable the field still works as a plain text box.
+let _tLinkedName = null;
+let _tDebounce = null;
+
+function escHtml(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function ymd(s){ return (s || '').slice(0, 10); }
+function hideTResults(){ const b = document.getElementById('tlink-results'); if (b) b.style.display = 'none'; }
+
+function onTournamentInput(){
+  const val = (getVal('tournament') || '').trim();
+  // If the user edited away from a linked event name, drop the stamp.
+  if (_tLinkedName && val !== _tLinkedName) unlinkTournament();
+  saveData();
+  clearTimeout(_tDebounce);
+  if (val.length < 2){ hideTResults(); return; }
+  _tDebounce = setTimeout(() => searchTournaments(val), 250);
+}
+
+async function searchTournaments(q){
+  const box  = document.getElementById('tlink-results');
+  const hint = document.getElementById('tlink-hint');
+  try {
+    const r = await fetch('/api/scoreboard/tournaments?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('catalog');
+    const list = await r.json();
+    if (!Array.isArray(list) || !list.length){
+      hideTResults();
+      hint.textContent = 'No matching Scoreboard events — type the name to enter it manually.';
+      return;
+    }
+    hint.textContent = '';
+    box.innerHTML = list.map(t => {
+      const meta = [t.division, t.gender, ymd(t.startDate), t.course].filter(Boolean).join(' · ');
+      return `<div class="tlink-item" data-id="${escHtml(t.id)}" data-name="${escHtml(t.name)}" data-course="${escHtml(t.course || '')}" data-date="${escHtml(t.startDate || '')}">
+        <div class="tlink-name">${escHtml(t.name)}</div><div class="tlink-meta">${escHtml(meta)}</div></div>`;
+    }).join('');
+    box.style.display = 'block';
+    box.querySelectorAll('.tlink-item').forEach(el => { el.onclick = () => pickTournament(el.dataset); });
+  } catch (e) {
+    hideTResults();
+    hint.textContent = 'Scoreboard search unavailable — enter the event name manually.';
+  }
+}
+
+function pickTournament(d){
+  setVal('tournament', d.name);
+  setVal('clippdTournamentId', d.id);
+  if (d.course && !getVal('courseName')) setVal('courseName', d.course);
+  if (d.date   && !getVal('roundDate'))  setVal('roundDate', ymd(d.date));
+  _tLinkedName = d.name;
+  showTLinkBadge();
+  hideTResults();
+  document.getElementById('tlink-hint').textContent = '';
+  saveData();
+}
+
+function unlinkTournament(){
+  setVal('clippdTournamentId', '');
+  setVal('clippdRoundId', '');
+  _tLinkedName = null;
+  const b = document.getElementById('tlink-badge');
+  if (b) b.style.display = 'none';
+  saveData();
+}
+
+function showTLinkBadge(){
+  const b = document.getElementById('tlink-badge');
+  if (!b) return;
+  b.innerHTML = '🔗 Linked to Scoreboard <a href="#" title="Unlink" onclick="unlinkTournament();return false;">✕</a>';
+  b.style.display = 'inline-flex';
+}
+
+// Helper to set a field value (mirrors getVal). Defined here in case the tool's
+// own setVal differs; safe no-op if the element is missing.
+function setVal(id, v){ const el = document.getElementById(id); if (el) el.value = v; }
+
+// Dismiss the results dropdown when clicking outside the tournament field.
+document.addEventListener('click', (e) => {
+  const inField = e.target.closest && e.target.closest('.field-group');
+  const isTournament = inField && inField.querySelector && inField.querySelector('#tournament');
+  if (!isTournament) hideTResults();
+});
+
+// ─── INIT ────────────────────────────────────────────
+buildTable();
+loadData();
+calc();
+
+// Set today's date if empty
+const dateEl = document.getElementById('roundDate');
+if (!dateEl.value) {
+  const today = new Date();
+  dateEl.value = today.toISOString().split('T')[0];
+}
+</script>
+</body>
+</html>
