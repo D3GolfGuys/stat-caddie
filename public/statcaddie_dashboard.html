@@ -307,9 +307,46 @@
 
 <script>
 // ─── LOAD DATA ────────────────────────────────────────
+// When signed in to the account, ACCOUNT_ROUNDS holds rounds pulled from the
+// server (GET /api/rounds). Until that loads (or when running standalone /
+// signed out), we fall back to the browser's local log.
+let ACCOUNT_ROUNDS = null; // null = not loaded yet → use localStorage
+
 function loadRounds() {
+  if (ACCOUNT_ROUNDS) return ACCOUNT_ROUNDS;
   try { return JSON.parse(localStorage.getItem('statcaddieRounds') || '[]'); }
   catch(e) { return []; }
+}
+
+// Map a server round row (snake_case + summary JSONB) to the record shape the
+// dashboard renderers expect (camelCase header fields + summary object).
+function mapAccountRound(row) {
+  return {
+    id:         row.id,
+    playerName: row.player_name || '',
+    tournament: row.tournament  || '',
+    roundNum:   row.round_num,
+    roundDate:  row.round_date ? String(row.round_date).slice(0, 10) : '',
+    courseName: row.course_name || '',
+    summary:    row.summary || {},
+    _account:   true,
+  };
+}
+
+// Pull the signed-in user's rounds from the account and re-render. Silently
+// leaves the localStorage fallback in place if signed out or offline.
+async function loadAccountRounds() {
+  try {
+    const res = await fetch('/api/rounds?limit=500', { credentials: 'include' });
+    if (!res.ok) return; // 401 (signed out) or error → keep local fallback
+    const rows = await res.json();
+    // Only rounds that carry a stat breakdown belong on the stats dashboard.
+    ACCOUNT_ROUNDS = (Array.isArray(rows) ? rows : [])
+      .filter(r => r.summary && typeof r.summary === 'object')
+      .map(mapAccountRound);
+    populateFilters();
+    render();
+  } catch (e) { /* offline / standalone — keep local fallback */ }
 }
 
 // ─── FILTER ───────────────────────────────────────────
@@ -657,8 +694,15 @@ function renderTournamentCards(rounds) {
 }
 
 // ─── DELETE ROUND ────────────────────────────────────
-function deleteRound(id) {
+async function deleteRound(id) {
   if (!confirm('Remove this round from the log?')) return;
+  // Account mode: delete on the server, then refresh from the account.
+  if (ACCOUNT_ROUNDS) {
+    try {
+      const res = await fetch('/api/rounds/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'include' });
+      if (res.ok) { await loadAccountRounds(); return; }
+    } catch (e) { /* fall through to local removal */ }
+  }
   try {
     const rounds = loadRounds().filter(r => r.id !== id);
     localStorage.setItem('statcaddieRounds', JSON.stringify(rounds));
@@ -695,10 +739,12 @@ function render() {
 // ─── INIT ────────────────────────────────────────────
 populateFilters();
 render();
+// Then pull the signed-in account's rounds (re-renders when they arrive).
+loadAccountRounds();
 
 // Refresh if another tab commits a round
 window.addEventListener('storage', e => {
-  if (e.key === 'statcaddieRounds') { populateFilters(); render(); }
+  if (e.key === 'statcaddieRounds' && !ACCOUNT_ROUNDS) { populateFilters(); render(); }
 });
 </script>
 </body>
