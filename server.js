@@ -32,6 +32,9 @@ app.use('/api/scoreboard',    require('./routes/scoreboard'));
 // ── Health check ─────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
+// ── Public config (lets the frontend know if billing is bypassed) ────
+app.get('/api/config', (req, res) => res.json({ betaMode: process.env.BETA_MODE === 'true' }));
+
 // ── SPA fallback — serve index.html for unknown routes ───────────────
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });

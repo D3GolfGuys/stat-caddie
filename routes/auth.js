@@ -25,14 +25,15 @@ router.post('/register', async (req, res) => {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
     if (existing.rows.length) return res.status(409).json({ error: 'Email already registered' });
 
+    const betaMode = process.env.BETA_MODE === 'true';
     const password_hash = await bcrypt.hash(password, 12);
     const { rows } = await pool.query(
-      'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role',
-      [email.toLowerCase(), password_hash, name, 'individual']
+      'INSERT INTO users (email, password_hash, name, role, subscription_status, subscription_plan) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, subscription_status, subscription_plan',
+      [email.toLowerCase(), password_hash, name, 'individual', betaMode ? 'active' : 'inactive', betaMode ? (plan || 'individual') : null]
     );
     const user = rows[0];
     issueToken(user.id, res);
-    res.status(201).json({ user, plan: plan || 'individual' });
+    res.status(201).json({ user, plan: plan || 'individual', betaMode });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Registration failed' });

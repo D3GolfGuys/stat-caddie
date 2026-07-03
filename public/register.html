@@ -33,7 +33,7 @@
   <div class="auth-card">
     <div class="auth-logo"><a href="/">⛳ Stat <span>Caddie</span></a></div>
     <h1>Create your account</h1>
-    <p class="auth-sub">You'll be redirected to complete payment after signing up.</p>
+    <p class="auth-sub" id="auth-sub">You'll be redirected to complete payment after signing up.</p>
 
     <!-- Plan Selection -->
     <div class="plan-toggle" id="plan-toggle">
@@ -74,6 +74,17 @@
 </div>
 
 <script>
+  // Beta mode: when on, registration skips payment entirely
+  let betaMode = false;
+  fetch('/api/config').then(r => r.json()).then(c => {
+    betaMode = !!c.betaMode;
+    if (betaMode) {
+      document.getElementById('auth-sub').textContent = 'Free beta access — no payment required.';
+      document.querySelector('.terms').style.display = 'none';
+    }
+    selectPlan(selectedPlan);
+  }).catch(() => {});
+
   // Pre-select plan from URL
   const params = new URLSearchParams(window.location.search);
   const urlPlan = params.get('plan');
@@ -85,9 +96,9 @@
     document.getElementById('selected-plan').value = plan;
     document.getElementById('opt-individual').classList.toggle('selected', plan === 'individual');
     document.getElementById('opt-team').classList.toggle('selected', plan === 'team');
-    document.getElementById('submit-btn').textContent = plan === 'team'
-      ? 'Continue to Payment — $39.99/mo →'
-      : 'Continue to Payment — $9.99/mo →';
+    document.getElementById('submit-btn').textContent = betaMode
+      ? 'Create Account →'
+      : (plan === 'team' ? 'Continue to Payment — $39.99/mo →' : 'Continue to Payment — $9.99/mo →');
   }
 
   document.getElementById('reg-form').addEventListener('submit', async e => {
@@ -106,6 +117,9 @@
       });
       const data = await res.json();
       if (!res.ok) { errEl.textContent = data.error || 'Registration failed'; errEl.style.display='block'; btn.textContent='Continue to Payment →'; btn.disabled=false; return; }
+
+      // Beta mode: account is already active — go straight into the app.
+      if (data.betaMode || betaMode) { window.location.href = '/app/index.html'; return; }
 
       // 2. Start Stripe checkout
       btn.textContent = 'Redirecting to payment…';
