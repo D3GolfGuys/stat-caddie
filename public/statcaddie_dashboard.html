@@ -337,7 +337,9 @@ function mapAccountRound(row) {
 // leaves the localStorage fallback in place if signed out or offline.
 async function loadAccountRounds() {
   try {
-    const res = await fetch('/api/rounds?limit=500', { credentials: 'include' });
+    // all=1 is honored by the server only for the platform owner; everyone
+    // else still gets just their own rounds. Lets the founder view all reports.
+    const res = await fetch('/api/rounds?limit=500&all=1', { credentials: 'include' });
     if (!res.ok) return; // 401 (signed out) or error → keep local fallback
     const rows = await res.json();
     // Only rounds that carry a stat breakdown belong on the stats dashboard.

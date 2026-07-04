@@ -4,21 +4,35 @@ const reconcile = require('../services/reconcile');
 const requireAuth = require('../middleware/requireAuth');
 const requireSubscription = require('../middleware/requireSubscription');
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'mdeckert24@gmail.com').toLowerCase();
+
 router.use(requireAuth, requireSubscription);
 
-// GET /api/rounds  — list user's rounds (now includes reconciliation status)
+// GET /api/rounds  — list rounds (now includes reconciliation status).
+// Normally scoped to the signed-in user. The platform owner can pass ?all=1
+// to pull every player's rounds (Beta: lets the founder view all reports).
 router.get('/', async (req, res) => {
-  const { limit = 50, offset = 0, status } = req.query;
-  const params = [req.user.id];
-  let where = 'WHERE user_id=$1';
-  if (status) { params.push(status); where += ` AND status=$${params.length}`; }
+  const { limit = 50, offset = 0, status, all } = req.query;
+  const isAdmin = (req.user.email || '').toLowerCase() === ADMIN_EMAIL;
+  const viewAll = isAdmin && (all === '1' || all === 'true');
+
+  const params = [];
+  const where = [];
+  if (!viewAll) { params.push(req.user.id); where.push(`r.user_id=$${params.length}`); }
+  if (status)   { params.push(status);      where.push(`r.status=$${params.length}`); }
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
   params.push(limit, offset);
   const { rows } = await pool.query(
-    `SELECT id, player_name, tournament, round_num, round_date, course_name,
-            status, has_official, has_stats, official_score, official_to_par,
-            official_finish, entered_score, summary, created_at
-       FROM rounds ${where}
-      ORDER BY round_date DESC NULLS LAST, created_at DESC
+    `SELECT r.id,
+            COALESCE(NULLIF(r.player_name, ''), u.name) AS player_name,
+            r.tournament, r.round_num, r.round_date, r.course_name,
+            r.status, r.has_official, r.has_stats, r.official_score, r.official_to_par,
+            r.official_finish, r.entered_score, r.summary, r.created_at
+       FROM rounds r
+       JOIN users u ON u.id = r.user_id
+       ${whereSql}
+      ORDER BY r.round_date DESC NULLS LAST, r.created_at DESC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
