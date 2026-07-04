@@ -68,6 +68,17 @@
         <div class="kpi"><div class="k-lbl">Active (30d)</div><div class="k-val" id="k-active30">—</div><div class="k-sub">users w/ a round</div></div>
       </div>
 
+      <!-- Demo data (Beta) -->
+      <div class="panel">
+        <h3>Demo data</h3>
+        <p class="page-sub" style="margin:0 0 12px;">Seed two sample players (Riley Thompson &amp; Casey Morgan) with 5 statted rounds each, so you can exercise the all-players report view. Re-seeding replaces their rounds — it never duplicates.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="btn-seed" onclick="seedDemo()">Seed demo data</button>
+          <button class="btn btn-outline btn-sm" id="btn-clear" onclick="clearDemo()">Remove demo data</button>
+          <span id="demo-msg" style="font-size:13px;color:var(--muted);"></span>
+        </div>
+      </div>
+
       <!-- Rounds over time -->
       <div class="panel">
         <h3>Rounds logged — last 30 days</h3>
@@ -154,6 +165,42 @@ const esc = s => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&am
     </tr>`;
   }).join('');
 })();
+
+// ── Demo data controls ──────────────────────────────────────────────────
+async function seedDemo() {
+  const btn = document.getElementById('btn-seed');
+  const msg = document.getElementById('demo-msg');
+  btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = 'Seeding…';
+  try {
+    const res = await API.post('/api/admin/seed-demo', {});
+    const data = await res.json();
+    if (res.ok) {
+      msg.style.color = 'var(--green-dark)';
+      msg.textContent = `✓ Seeded ${data.rounds} rounds across ${data.players.length} players. Open Stats Reports to view.`;
+    } else {
+      msg.style.color = '#9a3b2f'; msg.textContent = data.error || 'Seed failed.';
+    }
+  } catch { msg.style.color = '#9a3b2f'; msg.textContent = 'Network error.'; }
+  btn.disabled = false;
+}
+
+async function clearDemo() {
+  if (!confirm('Remove the demo players and all their rounds?')) return;
+  const btn = document.getElementById('btn-clear');
+  const msg = document.getElementById('demo-msg');
+  btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = 'Removing…';
+  try {
+    const res = await API.post('/api/admin/clear-demo', {});
+    const data = await res.json();
+    if (res.ok) {
+      msg.style.color = 'var(--green-dark)';
+      msg.textContent = `✓ Removed ${data.removedUsers} demo player(s).`;
+    } else {
+      msg.style.color = '#9a3b2f'; msg.textContent = data.error || 'Remove failed.';
+    }
+  } catch { msg.style.color = '#9a3b2f'; msg.textContent = 'Network error.'; }
+  btn.disabled = false;
+}
 </script>
 </body>
 </html>
