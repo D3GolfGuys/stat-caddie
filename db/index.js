@@ -149,6 +149,41 @@ const schema = `
     WHERE clippd_tournament_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_rounds_clippd_player ON rounds(clippd_player_id);
   CREATE INDEX IF NOT EXISTS idx_rounds_status ON rounds(status);
+
+  -- ── Course catalog cache (external API pre-fill) ─────────────────────
+  -- Course cards fetched from the external course database are cached here so
+  -- a venue's scorecard (par / stroke index / yardage per tee) is pulled once
+  -- and re-used for every round played there — keeps us inside the API's free
+  -- daily quota and makes pre-fill instant on repeat courses.
+  CREATE TABLE IF NOT EXISTS courses (
+    id SERIAL PRIMARY KEY,
+    source VARCHAR(24) NOT NULL DEFAULT 'golfcourseapi',
+    external_id VARCHAR(64),
+    club_name VARCHAR(255),
+    course_name VARCHAR(255),
+    location VARCHAR(255),
+    raw JSONB,
+    fetched_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(source, external_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS course_tees (
+    id SERIAL PRIMARY KEY,
+    course_id INTEGER REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+    tee_name VARCHAR(64),
+    gender VARCHAR(12),
+    par_total INTEGER,
+    yardage_total INTEGER,
+    course_rating DECIMAL(4,1),
+    slope_rating INTEGER,
+    holes JSONB,                    -- [{hole, par, handicap, yardage}, ...]
+    UNIQUE(course_id, gender, tee_name)
+  );
+  CREATE INDEX IF NOT EXISTS idx_course_tees_course_id ON course_tees(course_id);
+
+  -- Per-hole yardage on the stat layer, pre-filled from the course catalog and
+  -- player-editable. Stored so length-aware tendency analysis is possible later.
+  ALTER TABLE round_holes ADD COLUMN IF NOT EXISTS yardage INTEGER;
 `;
 
 async function initDB() {

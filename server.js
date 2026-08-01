@@ -26,6 +26,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/rounds',        require('./routes/rounds'));
+app.use('/api/courses',       require('./routes/courses'));
 app.use('/api/teams',         require('./routes/teams'));
 app.use('/api/scoreboard',    require('./routes/scoreboard'));
 app.use('/api/admin',         require('./routes/admin'));

@@ -164,6 +164,7 @@ function parseHoleData(holeData = {}) {
       hole: h,
       par: par || 4,
       hcp: parseInt(holeData[`hcp-${h}`]) || null,
+      yardage: parseInt(holeData[`yds-${h}`]) || null,
       score: score || null,
       fw: holeData[`fw-${h}`] || null,
       gir: holeData[`gir-${h}`] || null,
@@ -195,18 +196,18 @@ async function applyManualEntry(client, { userId, teamId = null, identity, heade
     await client.query(
       `INSERT INTO round_holes
          (round_id, hole_num, par, hcp, score, fw, gir, miss_dir, drive_dist, prox,
-          putts, first_putt, three_putt, ud_att, ud_made, ss_att, ss_made, pen_strokes, notes, score_source)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'manual')
+          putts, first_putt, three_putt, ud_att, ud_made, ss_att, ss_made, pen_strokes, notes, yardage, score_source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'manual')
        ON CONFLICT (round_id, hole_num) DO UPDATE SET
          -- stat fields: always owned by manual entry
          hcp=$4, fw=$6, gir=$7, miss_dir=$8, drive_dist=$9, prox=$10,
          putts=$11, first_putt=$12, three_putt=$13, ud_att=$14, ud_made=$15,
-         ss_att=$16, ss_made=$17, pen_strokes=$18, notes=$19,
+         ss_att=$16, ss_made=$17, pen_strokes=$18, notes=$19, yardage=$20,
          -- score/par: keep Scoreboard's if it owns the hole, else take manual
          score = CASE WHEN round_holes.score_source='scoreboard' THEN round_holes.score ELSE $5 END,
          par   = CASE WHEN round_holes.score_source='scoreboard' THEN round_holes.par   ELSE $3 END`,
       [roundId, h.hole, h.par, h.hcp, h.score, h.fw, h.gir, h.miss_dir, h.drive_dist, h.prox,
-       h.putts, h.first_putt, h.three_putt, h.ud_att, h.ud_made, h.ss_att, h.ss_made, h.pen_strokes, h.notes]
+       h.putts, h.first_putt, h.three_putt, h.ud_att, h.ud_made, h.ss_att, h.ss_made, h.pen_strokes, h.notes, h.yardage]
     );
   }
   const status = await recomputeStatus(client, roundId);
