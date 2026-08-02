@@ -1,10 +1,10 @@
-/* Golf Metrics — client-side PDF reports (Golfstat "StatView" format)
+/* Golf Metrics — client-side PDF reports (Metrics format)
  * ------------------------------------------------------------------
- * Modeled on the Golfstat StatView report (see statcaddie_report.html): a
+ * Modeled on the Metrics report (see statcaddie_report.html): a
  * header band, a summary strip, a Tournament Results table with per-round
- * scores, and a dense StatView stat grid — one page per player, with a team
+ * scores, and a dense Metrics stat grid — one page per player, with a team
  * overview page for the team report. Cross-school national/region/division
- * ranks from the real Golfstat report are omitted (the prototype flags them
+ * ranks from the full cross-school report are omitted (the prototype flags them
  * "N/A in production"); we fill the layout with the stats we actually capture.
  *
  *   StatCaddiePDF.playerReport({ playerName, teamName, rounds })
@@ -24,7 +24,7 @@
     n1: v => (v == null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10).toFixed(1),
     p3: v => (v == null || isNaN(v)) ? '—' : v.toFixed(3),
     int: v => (v == null || isNaN(v)) ? '—' : ('' + Math.round(v)),
-    // rate percent -> Golfstat-style proportion, e.g. 67.1% -> ".671"
+    // rate percent -> decimal proportion, e.g. 67.1% -> ".671"
     frac: v => (v == null || isNaN(v)) ? '—' : (v / 100).toFixed(3).replace(/^0(?=\.)/, ''),
     vs: v => { if (v == null || isNaN(v)) return '—'; const r = Math.round(v * 10) / 10; return r === 0 ? 'E' : (r > 0 ? '+' + r : '' + r); },
   };
@@ -63,7 +63,7 @@
     };
   }
 
-  // The StatView stat battery (label, value) — no cross-school ranks.
+  // The Metrics stat battery (label, value) — no cross-school ranks.
   function statViewItems(s) {
     const per = (v) => s.rounds ? v / s.rounds : null;
     return [
@@ -129,7 +129,7 @@
     doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
     doc.text('GOLF METRICS', 40, 30);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(200, 220, 205);
-    doc.text('STATVIEW REPORT', W - 40, 30, { align: 'right' });
+    doc.text('METRICS REPORT', W - 40, 30, { align: 'right' });
     const y = 64;
     doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, C.muted);
     doc.text(meta.l || '', 40, y);
@@ -195,7 +195,7 @@
       doc.text(`Page ${i} of ${n}${today ? '   ·   ' + today : ''}`, W - 40, H - 16, { align: 'right' });
     }
   }
-  const metaFor = (teamName, kind) => ({ l: teamName || 'Individual', c: 'GOLF METRICS · STATVIEW', r: kind });
+  const metaFor = (teamName, kind) => ({ l: teamName || 'Individual', c: 'GOLF METRICS', r: kind });
 
   // ── page composers ───────────────────────────────────────────────
   function drawPlayerPage(doc, { name, tag, meta, rounds }) {
@@ -222,7 +222,7 @@
       margin: { left: 40, right: 40 },
     });
     y = doc.lastAutoTable.finalY + 16;
-    y = sec(doc, y, 'StatView');
+    y = sec(doc, y, 'Metrics');
     grid(doc, y, statViewItems(s));
   }
 
@@ -252,7 +252,7 @@
       margin: { left: 40, right: 40 },
     });
     y = doc.lastAutoTable.finalY + 16;
-    y = sec(doc, y, 'Team StatView');
+    y = sec(doc, y, 'Team Metrics');
     grid(doc, y, statViewItems(t));
   }
 
@@ -262,7 +262,7 @@
     const doc = new JsPDF({ unit: 'pt', format: 'letter' });
     drawPlayerPage(doc, { name: playerName || 'Player', tag: null, meta: metaFor(teamName, 'Player Report'), rounds: rounds || [] });
     stampFooters(doc);
-    doc.save(`GolfMetrics_${safe(playerName)}_StatView.pdf`);
+    doc.save(`GolfMetrics_${safe(playerName)}.pdf`);
   }
   function teamReport({ teamName, players, rounds }) {
     const JsPDF = ensureLib(); if (!JsPDF) return;
@@ -282,7 +282,7 @@
       });
     });
     stampFooters(doc);
-    doc.save(`GolfMetrics_${safe(teamName)}_Team_StatView.pdf`);
+    doc.save(`GolfMetrics_${safe(teamName)}_Team.pdf`);
   }
 
   window.StatCaddiePDF = { computeSeason, statViewItems, playerReport, teamReport };
