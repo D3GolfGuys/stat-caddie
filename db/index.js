@@ -340,6 +340,16 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_tournaments_season ON tournaments(season_id);
   CREATE INDEX IF NOT EXISTS idx_tournaments_division ON tournaments(division);
   CREATE INDEX IF NOT EXISTS idx_tournaments_results ON tournaments(has_results) WHERE has_results;
+
+  -- ===================================================================
+  --  PHASE 1b - Team segmentation (coach signup captures division/school)
+  -- ===================================================================
+  ALTER TABLE teams ADD COLUMN IF NOT EXISTS division    VARCHAR(16);
+  ALTER TABLE teams ADD COLUMN IF NOT EXISTS conference  VARCHAR(255);
+  ALTER TABLE teams ADD COLUMN IF NOT EXISTS region      VARCHAR(64);
+  ALTER TABLE teams ADD COLUMN IF NOT EXISTS school_id   INTEGER REFERENCES schools(id) ON DELETE SET NULL;
+  ALTER TABLE teams ADD COLUMN IF NOT EXISTS school_name VARCHAR(255);
+  CREATE INDEX IF NOT EXISTS idx_teams_division ON teams(division);
 `;
 
 async function initDB() {

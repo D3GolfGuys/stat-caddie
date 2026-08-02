@@ -104,25 +104,34 @@ async function defaultFetchPage(cursor, { cursorParam = 'lastSortValue' } = {}) 
 // Page through the whole catalog and ingest every tournament. Idempotent.
 async function syncCatalog(pool, opts = {}) {
   const { fetchPage = defaultFetchPage, maxPages = 50 } = opts;
-  const seasons = new Set(), schools = new Set();
-  let cursor = null, pages = 0, tournaments = 0, errors = 0;
+  const seasons = new Set(), schools = new Set(), seen = new Set();
+  let cursor = null, pages = 0, errors = 0;
   for (let p = 0; p < maxPages; p++) {
     const page = await fetchPage(cursor);
     const rows = (page && page.results) || [];
     if (!rows.length) break;
+    let fresh = 0;
     for (const t of rows) {
+      const id = String(t.tournamentId);
+      if (seen.has(id)) continue;          // skip repeats
+      seen.add(id); fresh++;
       try {
         const r = await ingestTournament(pool, t);
-        tournaments++;
         if (r.season) seasons.add(r.season);
-        r.schoolIds.forEach(id => schools.add(id));
+        r.schoolIds.forEach(sid => schools.add(sid));
       } catch (e) { errors++; }
     }
     pages++;
+    // Stop if a page brought nothing new — guards against a non-advancing
+    // cursor re-serving the same page. NOTE: Clippd paging is NOT via a
+    // ?lastSortValue or ?size query param (both verified no-ops); real paging
+    // is ES point-in-time (/api/elastic/pit/tournaments-v6) + search_after,
+    // still to be wired. Until then a sync captures only the first page.
+    if (fresh === 0) break;
     cursor = page.lastSortValue;
     if (!cursor) break;
   }
-  return { pages, tournaments, seasons: seasons.size, schools: schools.size, errors };
+  return { pages, tournaments: seen.size, schools: schools.size, seasons: seasons.size, errors };
 }
 
 module.exports = {

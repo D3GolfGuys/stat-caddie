@@ -50,7 +50,26 @@
       <!-- Coach-only: name the team being created -->
       <div class="form-group" id="team-name-group" style="display:block;">
         <label for="teamName">Team name</label>
-        <input type="text" id="teamName" placeholder="e.g. Lincoln High Golf" autocomplete="organization">
+        <input type="text" id="teamName" placeholder="e.g. Lincoln College Men's Golf" autocomplete="organization">
+      </div>
+      <div class="form-group" id="division-group">
+        <label for="division">Division</label>
+        <select id="division" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--green-dark);">
+          <option value="" disabled selected>Select division…</option>
+          <option value="D1">NCAA Division I</option>
+          <option value="D2">NCAA Division II</option>
+          <option value="D3">NCAA Division III</option>
+          <option value="NAIA">NAIA</option>
+          <option value="NJCAA">NJCAA</option>
+        </select>
+      </div>
+      <div class="form-group" id="school-group">
+        <label for="school">School / Program</label>
+        <input type="text" id="school" placeholder="e.g. Lincoln College" autocomplete="organization">
+      </div>
+      <div class="form-group" id="conference-group">
+        <label for="conference">Conference <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input type="text" id="conference" placeholder="e.g. SCAC">
       </div>
       <div class="form-group">
         <label for="name" id="name-label">Full name</label>
@@ -126,8 +145,15 @@
 
     const isCoach = selectedType === 'coach';
     const teamName = document.getElementById('teamName').value.trim();
+    const division = document.getElementById('division').value;
+    const schoolName = document.getElementById('school').value.trim();
+    const conference = document.getElementById('conference').value.trim();
     if (isCoach && !teamName) {
       errEl.textContent = 'Please enter a team name to create your team.'; errEl.style.display = 'block';
+      return;
+    }
+    if (isCoach && !division) {
+      errEl.textContent = 'Please select your division.'; errEl.style.display = 'block';
       return;
     }
     // Coaches subscribe on the team plan; individuals on the individual plan.
@@ -146,6 +172,9 @@
           password: document.getElementById('password').value,
           accountType: selectedType,
           teamName: isCoach ? teamName : undefined,
+          division: isCoach ? division : undefined,
+          schoolName: isCoach ? (schoolName || teamName) : undefined,
+          conference: isCoach ? (conference || undefined) : undefined,
           plan,
         }),
       });
