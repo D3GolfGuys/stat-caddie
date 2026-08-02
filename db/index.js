@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { seedMetrics } = require('../services/metrics');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -184,12 +185,168 @@ const schema = `
   -- Per-hole yardage on the stat layer, pre-filled from the course catalog and
   -- player-editable. Stored so length-aware tendency analysis is possible later.
   ALTER TABLE round_holes ADD COLUMN IF NOT EXISTS yardage INTEGER;
+
+  -- ===================================================================
+  --  PHASE 0 - Canonical rankings foundation (additive; safe to re-run)
+  --  Population-wide players/schools/seasons decoupled from app accounts,
+  --  a metric registry, per-player-season stat profiles, and precomputed
+  --  rank/percentile tables per segment. See RANKINGS_PLAN.md.
+  -- ===================================================================
+
+  CREATE TABLE IF NOT EXISTS seasons (
+    id SERIAL PRIMARY KEY,
+    label VARCHAR(20) NOT NULL UNIQUE,        -- e.g. '2025-26'
+    starts_on DATE,
+    ends_on DATE,
+    is_current BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS schools (
+    id SERIAL PRIMARY KEY,
+    clippd_school_id VARCHAR(64) UNIQUE,      -- match key to Scoreboard
+    name VARCHAR(255) NOT NULL,
+    short_name VARCHAR(255),
+    division VARCHAR(16),                     -- D1 | D2 | D3 | NAIA | NJCAA
+    conference VARCHAR(255),
+    region VARCHAR(64),
+    gender VARCHAR(12),                       -- M | W (separate row per program)
+    raw JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_schools_division ON schools(division);
+  CREATE INDEX IF NOT EXISTS idx_schools_conference ON schools(conference);
+
+  -- Canonical player - exists whether or not they ever become a subscriber.
+  CREATE TABLE IF NOT EXISTS college_players (
+    id SERIAL PRIMARY KEY,
+    clippd_player_id VARCHAR(64) UNIQUE,      -- canonical match key to Scoreboard
+    full_name VARCHAR(255) NOT NULL,
+    current_school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+    gender VARCHAR(12),
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- subscriber who IS this player, if any
+    raw JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_college_players_school ON college_players(current_school_id);
+  CREATE INDEX IF NOT EXISTS idx_college_players_user ON college_players(user_id);
+
+  -- Per-season affiliation - the correct home for division/conference/class,
+  -- so transfers and reclassifications are handled without rewriting history.
+  CREATE TABLE IF NOT EXISTS player_seasons (
+    id SERIAL PRIMARY KEY,
+    player_id INTEGER REFERENCES college_players(id) ON DELETE CASCADE NOT NULL,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
+    school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL,
+    division VARCHAR(16),
+    conference VARCHAR(255),
+    region VARCHAR(64),
+    gender VARCHAR(12),
+    class_year VARCHAR(16),                   -- FR | SO | JR | SR | GR
+    UNIQUE(player_id, season_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_player_seasons_season ON player_seasons(season_id);
+  CREATE INDEX IF NOT EXISTS idx_player_seasons_div_season ON player_seasons(division, season_id);
+
+  -- Attach rounds to a canonical player (works for non-subscriber players too).
+  -- user_id stays for app-entered rounds but is now nullable, so ingested
+  -- population score-rows (no account) can live in the same reconciled table.
+  ALTER TABLE rounds ADD COLUMN IF NOT EXISTS college_player_id INTEGER REFERENCES college_players(id) ON DELETE CASCADE;
+  ALTER TABLE rounds ADD COLUMN IF NOT EXISTS season_id INTEGER REFERENCES seasons(id) ON DELETE SET NULL;
+  ALTER TABLE rounds ALTER COLUMN user_id DROP NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_rounds_college_player ON rounds(college_player_id);
+  CREATE INDEX IF NOT EXISTS idx_rounds_season ON rounds(season_id);
+  -- Canonical dedup for ingested rounds, mirroring uniq_round_match.
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_round_canonical_match
+    ON rounds(college_player_id, clippd_tournament_id, round_num)
+    WHERE college_player_id IS NOT NULL AND clippd_tournament_id IS NOT NULL;
+
+  -- Metric registry - every rankable stat is a row here (seeded from code).
+  CREATE TABLE IF NOT EXISTS metrics (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(48) NOT NULL UNIQUE,          -- stable code, e.g. 'gir_pct'
+    display_name VARCHAR(80) NOT NULL,
+    category VARCHAR(32),                     -- scoring | tee | approach | short_game | putting | errors | summary
+    unit VARCHAR(16),                         -- pct | strokes | count | feet | yards | ratio
+    direction VARCHAR(6) NOT NULL DEFAULT 'higher',  -- higher | lower (which is better)
+    decimals INTEGER DEFAULT 1,
+    min_sample INTEGER DEFAULT 5,             -- rounds needed before a player is ranked
+    rankable BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 100,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  -- Per-player-season stat profile: one value + its sample size per metric.
+  CREATE TABLE IF NOT EXISTS player_metric_season (
+    id SERIAL PRIMARY KEY,
+    player_id INTEGER REFERENCES college_players(id) ON DELETE CASCADE NOT NULL,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
+    metric_id INTEGER REFERENCES metrics(id) ON DELETE CASCADE NOT NULL,
+    value DECIMAL(10,3),
+    sample_n INTEGER DEFAULT 0,               -- rounds behind the value
+    computed_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(player_id, season_id, metric_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_pms_metric_season ON player_metric_season(metric_id, season_id);
+  CREATE INDEX IF NOT EXISTS idx_pms_player ON player_metric_season(player_id, season_id);
+
+  -- Precomputed rankings: rank + percentile per (metric, season, segment).
+  CREATE TABLE IF NOT EXISTS rankings (
+    id SERIAL PRIMARY KEY,
+    metric_id INTEGER REFERENCES metrics(id) ON DELETE CASCADE NOT NULL,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
+    segment_type VARCHAR(16) NOT NULL,        -- national | division | conference | region | gender | class_year
+    segment_value VARCHAR(255) NOT NULL,      -- 'ALL' | 'D3' | conference | 'M' | ...
+    player_id INTEGER REFERENCES college_players(id) ON DELETE CASCADE NOT NULL,
+    value DECIMAL(10,3),
+    rank INTEGER,
+    percentile DECIMAL(5,2),
+    sample_n INTEGER,                         -- the player's own sample
+    cohort_n INTEGER,                         -- players in this ranked cohort
+    computed_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(metric_id, season_id, segment_type, segment_value, player_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_rankings_lookup ON rankings(metric_id, season_id, segment_type, segment_value, rank);
+  CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id, season_id);
+
+  -- ===================================================================
+  --  PHASE 1 - Scoreboard catalog (event worklist + school universe)
+  -- ===================================================================
+  -- A school may be known by Clippd id (from competingSchools[]) before we
+  -- have its name, so name is nullable and enriched later from tournament detail.
+  ALTER TABLE schools ALTER COLUMN name DROP NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS tournaments (
+    id SERIAL PRIMARY KEY,
+    clippd_tournament_id VARCHAR(64) UNIQUE,
+    name VARCHAR(255),
+    season_id INTEGER REFERENCES seasons(id) ON DELETE SET NULL,
+    division VARCHAR(16),
+    gender VARCHAR(12),
+    conference VARCHAR(255),
+    region VARCHAR(64),
+    venue VARCHAR(255),
+    host_clippd_id VARCHAR(64),
+    host_name VARCHAR(255),
+    starts_on DATE,
+    ends_on DATE,
+    planned_rounds INTEGER,
+    has_results BOOLEAN DEFAULT FALSE,
+    is_complete BOOLEAN DEFAULT FALSE,
+    competing_school_ids JSONB,           -- ids only; names/rosters via detail
+    raw JSONB,
+    synced_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_tournaments_season ON tournaments(season_id);
+  CREATE INDEX IF NOT EXISTS idx_tournaments_division ON tournaments(division);
+  CREATE INDEX IF NOT EXISTS idx_tournaments_results ON tournaments(has_results) WHERE has_results;
 `;
 
 async function initDB() {
   try {
     await pool.query(schema);
-    console.log('✅ Database schema initialized');
+    const seededMetrics = await seedMetrics(pool);
+    console.log(`✅ Database schema initialized (${seededMetrics} metrics)`);
   } catch (err) {
     console.error('❌ DB init error:', err.message);
     throw err;
