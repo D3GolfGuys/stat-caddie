@@ -19,9 +19,11 @@ async function initApp(opts = {}) {
     if (link.getAttribute('href') === currentPath) link.classList.add('active');
   });
 
-  // Show team links only for team users
+  // Coaches are team-first: reveal team sections, and hide player-only tools
+  // (capture / stats reports) since coaches don't log their own rounds.
   if (user.role === 'team_admin') {
     document.querySelectorAll('.team-admin-only').forEach(el => el.style.display = '');
+    document.querySelectorAll('.player-only').forEach(el => el.style.display = 'none');
   }
 
   // Owner-only: inject an Admin link into the sidebar on every page.
