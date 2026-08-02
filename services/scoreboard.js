@@ -46,7 +46,7 @@ async function fetchHoleByHole(/* tournamentId, roundNum */) {
 }
 
 /**
- * Sync one tournament round into Stat Caddie.
+ * Sync one tournament round into College Golf Metrics.
  * @param {string|number} tournamentId
  * @param {object} opts
  *   - roundNum:        which round (default 1)

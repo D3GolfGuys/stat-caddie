@@ -46,7 +46,7 @@ app.get('*', (req, res) => {
 // ── Start ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 initDB().then(() => {
-  app.listen(PORT, () => console.log(`⛳ Stat Caddie running on http://localhost:${PORT}`));
+  app.listen(PORT, () => console.log(`⛳ College Golf Metrics running on http://localhost:${PORT}`));
 }).catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);
