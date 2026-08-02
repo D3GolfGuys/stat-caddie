@@ -292,7 +292,7 @@ function closeDetail(){ selectedPlayer=null; document.getElementById('player-det
 
 // ── PDF exports ─────────────────────────────────────────
 function downloadTeamPDF(){
-  const players = MEMBERS.map(m => ({ name: m.name, role: m.role, stats: statsFor(m.id) }));
+  const players = MEMBERS.map(m => ({ id: m.id, name: m.name, role: m.role }));
   window.StatCaddiePDF.teamReport({ teamName: (TEAM && TEAM.name) || 'Team', players, rounds: ROUNDS });
 }
 function downloadPlayerPDF(){
