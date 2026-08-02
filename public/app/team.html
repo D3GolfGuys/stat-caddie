@@ -64,6 +64,7 @@
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px;flex-wrap:wrap;">
         <div class="page-title" id="team-name">Team Dashboard</div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="openSettings()">⚙ Team Settings</button>
           <button class="btn btn-outline btn-sm" onclick="downloadTeamPDF()">⬇ Team PDF</button>
           <button class="btn btn-primary btn-sm" onclick="openInvite()">+ Invite Player</button>
         </div>
@@ -79,6 +80,28 @@
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('invite-modal').style.display='none'">Cancel</button>
         </div>
         <div id="invite-result" style="margin-top:12px;font-size:12px;"></div>
+      </div>
+
+      <!-- Team settings modal -->
+      <div id="settings-modal" style="display:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin:12px 0;max-width:520px;">
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;">Team Settings</h3>
+        <div class="form-group"><label>Team name</label><input type="text" id="set-name"></div>
+        <div class="form-group"><label>Division <span style="font-weight:400;color:var(--muted)">(sets your ranking segment)</span></label>
+          <select id="set-division" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:#fff;">
+            <option value="">Not set</option>
+            <option value="D1">NCAA Division I</option>
+            <option value="D2">NCAA Division II</option>
+            <option value="D3">NCAA Division III</option>
+            <option value="NAIA">NAIA</option>
+            <option value="NJCAA">NJCAA</option>
+          </select></div>
+        <div class="form-group"><label>School / Program</label><input type="text" id="set-school" placeholder="e.g. Lincoln College"></div>
+        <div class="form-group"><label>Conference <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="text" id="set-conference" placeholder="e.g. SCAC"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('settings-modal').style.display='none'">Cancel</button>
+        </div>
+        <div id="settings-result" style="margin-top:10px;font-size:12px;"></div>
       </div>
 
       <!-- Team summary strip (matches the PDF team page) -->
@@ -179,6 +202,23 @@ function statsFor(userId){
 
 // ── invite / manage ─────────────────────────────────────
 function openInvite(){ const m=document.getElementById('invite-modal'); m.style.display='block'; document.getElementById('invite-email').focus(); }
+function openSettings(){
+  document.getElementById('set-name').value=(TEAM&&TEAM.name)||'';
+  document.getElementById('set-division').value=(TEAM&&TEAM.division)||'';
+  document.getElementById('set-school').value=(TEAM&&TEAM.school_name)||'';
+  document.getElementById('set-conference').value=(TEAM&&TEAM.conference)||'';
+  document.getElementById('settings-modal').style.display='block';
+}
+async function saveSettings(){
+  const out=document.getElementById('settings-result');
+  const body={ name:document.getElementById('set-name').value.trim(),
+    division:document.getElementById('set-division').value,
+    schoolName:document.getElementById('set-school').value.trim(),
+    conference:document.getElementById('set-conference').value.trim() };
+  const r=await API.put('/api/teams/me',body); const d=r?await r.json():{};
+  if(r&&r.ok){ out.style.color='var(--green-mid)'; out.textContent='✅ Saved. Rankings use this on the next nightly refresh (or ask the admin to recompute).'; await load(); setTimeout(()=>{document.getElementById('settings-modal').style.display='none';},1400); }
+  else { out.style.color='var(--red)'; out.textContent=(d&&d.error)||'Failed to save.'; }
+}
 async function sendInvite(){
   const email=document.getElementById('invite-email').value.trim();
   const out=document.getElementById('invite-result');
@@ -342,7 +382,7 @@ document.querySelectorAll('th.sortable').forEach(th=>{
 // ── load ────────────────────────────────────────────────
 async function load(){
   const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
-  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; if(TEAM) document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; }
+  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; if(TEAM){ document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; const seg=[TEAM.division,TEAM.conference].filter(Boolean).join(' · '); document.getElementById('team-sub').textContent = seg ? seg + ' — click a player to drill into their game.' : 'Set your division in ⚙ Team Settings to unlock rankings — click a player to drill in.'; } }
   if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
   renderTeamSummary();
   renderRoster();

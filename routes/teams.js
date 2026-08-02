@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const { requireTeamAdmin } = require('../middleware/requireSubscription');
+const { findOrCreateSchool } = require('../services/schools');
 
 router.use(requireAuth);
 
@@ -18,11 +19,21 @@ router.get('/me', async (req, res) => {
   res.json({ team: teamRows[0], members });
 });
 
-// PUT /api/teams/me  — update team name (admin only)
+// PUT /api/teams/me  — update team name + ranking segment (admin only)
 router.put('/me', requireTeamAdmin, async (req, res) => {
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Team name required' });
-  await pool.query('UPDATE teams SET name=$1 WHERE id=$2', [name, req.user.team_id]);
+  const { name, division, conference, schoolName } = req.body;
+  const sets = [], params = []; let i = 1;
+  if (name != null && String(name).trim()) { sets.push(`name=$${i++}`); params.push(String(name).trim()); }
+  if (division !== undefined)   { sets.push(`division=$${i++}`);   params.push(division || null); }
+  if (conference !== undefined) { sets.push(`conference=$${i++}`); params.push(conference || null); }
+  if (schoolName !== undefined) {
+    const schoolId = await findOrCreateSchool(pool, { name: schoolName, division, conference });
+    sets.push(`school_id=$${i++}`);   params.push(schoolId);
+    sets.push(`school_name=$${i++}`); params.push(schoolName || null);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+  params.push(req.user.team_id);
+  await pool.query(`UPDATE teams SET ${sets.join(', ')} WHERE id=$${i}`, params);
   res.json({ ok: true });
 });
 

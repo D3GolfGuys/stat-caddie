@@ -350,6 +350,12 @@ const schema = `
   ALTER TABLE teams ADD COLUMN IF NOT EXISTS school_id   INTEGER REFERENCES schools(id) ON DELETE SET NULL;
   ALTER TABLE teams ADD COLUMN IF NOT EXISTS school_name VARCHAR(255);
   CREATE INDEX IF NOT EXISTS idx_teams_division ON teams(division);
+
+  -- ===================================================================
+  --  PHASE 2 - Rankings compute (one canonical player per app user)
+  -- ===================================================================
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_college_players_user
+    ON college_players(user_id) WHERE user_id IS NOT NULL;
 `;
 
 async function initDB() {

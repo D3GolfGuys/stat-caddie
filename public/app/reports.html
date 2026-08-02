@@ -70,6 +70,25 @@
       </div>
       <div id="recon-lists"></div>
 
+      <!-- My Rankings: percentiles vs division / conference / nation -->
+      <style>
+        #rank-bar{background:#fff;border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:12px;flex-wrap:wrap}
+        #rank-panel{display:none;background:#fbfdfb;border-bottom:1px solid var(--border);padding:10px 16px 14px;max-height:52vh;overflow-y:auto}
+        .rk-table{width:100%;border-collapse:collapse;font-size:12.5px}
+        .rk-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:4px 8px;border-bottom:1px solid var(--border)}
+        .rk-table td{padding:5px 8px;border-bottom:1px solid #eef3ef;vertical-align:top}
+        .rk-cat{font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--green-dark);padding:9px 8px 2px;font-weight:800}
+        .pct{display:inline-block;min-width:30px;text-align:center;font-weight:800;border-radius:12px;padding:2px 8px;font-size:11.5px}
+        .pct.hi{background:#e6f6ec;color:#0a7d3c}.pct.mid{background:#fbf4dd;color:#8a6d00}.pct.lo{background:#fbeae7;color:#9a3b2f}.pct.na{background:#f3f4f5;color:#9aa8a0}
+        .rk-sub{color:#6b7c73;font-size:10.5px}
+      </style>
+      <div id="rank-bar">
+        <span style="color:var(--green-dark);font-weight:700;">&#9733; My Rankings</span>
+        <span class="rk-sub" id="rank-summary">&hellip;</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" id="rank-toggle" onclick="toggleRankings()">Show</button>
+      </div>
+      <div id="rank-panel"></div>
+
       <iframe
         src="/statcaddie_dashboard.html"
         style="width:100%;height:calc(100vh - 200px);border:none;display:block;"
@@ -86,7 +105,7 @@
 <script src="/js/pdfReports.js"></script>
 <script>
 let __user = null;
-(async () => { __user = await initApp(); await loadReconPanel(); })();
+(async () => { __user = await initApp(); await loadReconPanel(); await loadRankings(); })();
 
 // Download the signed-in player's season report as a PDF.
 async function downloadMyReport(){
@@ -172,6 +191,47 @@ async function resolveConflict(id, choice){
       alert('Could not resolve — please try again.');
     }
   } catch { alert('Network error resolving conflict.'); }
+}
+
+// ── My Rankings (percentiles vs national / division / conference) ───────────
+let _rank = { rows: [], open: false };
+function pctClass(p){ if(p==null) return 'na'; if(p>=67) return 'hi'; if(p>=34) return 'mid'; return 'lo'; }
+function pctCell(seg){
+  if(!seg) return '<span class="pct na">&mdash;</span>';
+  return `<span class="pct ${pctClass(seg.percentile)}">${seg.percentile==null?'&mdash;':Math.round(seg.percentile)}</span>`
+       + `<div class="rk-sub">#${seg.rank} of ${seg.cohort_n}</div>`;
+}
+async function loadRankings(){
+  try { const res = await API.get('/api/rankings/me'); _rank.rows = (res && res.ok) ? ((await res.json()).rankings || []) : []; }
+  catch { _rank.rows = []; }
+  const s = document.getElementById('rank-summary');
+  if(!_rank.rows.length){ s.textContent = 'No rankings yet — log a few rounds; rankings refresh nightly.'; }
+  else { const div = _rank.rows.find(r=>r.segment_type==='division');
+    const n = new Set(_rank.rows.map(r=>r.key)).size;
+    s.textContent = div ? `Ranked in ${div.segment_value} · ${n} metrics` : `${n} metrics ranked`; }
+  renderRankings();
+}
+function toggleRankings(){ _rank.open=!_rank.open; document.getElementById('rank-toggle').textContent=_rank.open?'Hide':'Show'; renderRankings(); }
+function renderRankings(){
+  const box=document.getElementById('rank-panel');
+  if(!_rank.open){ box.style.display='none'; return; }
+  box.style.display='block';
+  if(!_rank.rows.length){ box.innerHTML='<div class="rk-sub" style="padding:8px 0;">Nothing ranked yet. Once you and other teams log rounds, your percentile vs division, conference and the nation appears here — updated nightly.</div>'; return; }
+  const byKey=new Map();
+  for(const r of _rank.rows){
+    if(!byKey.has(r.key)) byKey.set(r.key,{ name:r.display_name, category:r.category, decimals:r.decimals, unit:r.unit, value:r.value, segs:{} });
+    byKey.get(r.key).segs[r.segment_type]={ percentile:r.percentile, rank:r.rank, cohort_n:r.cohort_n };
+  }
+  const fmtVal=(v,dec,unit)=>{ if(v==null) return '&mdash;'; const n=Number(v).toFixed(dec==null?1:dec); return unit==='pct'?n+'%':n; };
+  let html='<table class="rk-table"><thead><tr><th>Metric</th><th>You</th><th>Division</th><th>Conference</th><th>National</th></tr></thead><tbody>';
+  let lastCat=null;
+  for(const [,m] of byKey){
+    if(m.category!==lastCat){ html+=`<tr><td colspan="5" class="rk-cat">${m.category||''}</td></tr>`; lastCat=m.category; }
+    html+=`<tr><td><strong>${m.name}</strong></td><td>${fmtVal(m.value,m.decimals,m.unit)}</td>`
+        +`<td>${pctCell(m.segs.division)}</td><td>${pctCell(m.segs.conference)}</td><td>${pctCell(m.segs.national)}</td></tr>`;
+  }
+  html+='</tbody></table><div class="rk-sub" style="margin-top:8px;">Percentile = share of the cohort you beat (higher is better). Refreshes nightly.</div>';
+  box.innerHTML=html;
 }
 </script>
 </body>

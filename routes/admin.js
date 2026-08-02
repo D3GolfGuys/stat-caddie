@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const requireAdmin = require('../middleware/requireAdmin');
 const { seedDemo, seedTeam, clearDemo } = require('../services/demoSeed');
+const rankings = require('../services/rankings');
 
 // Owner-only. Every route here requires a valid session AND the admin email.
 router.use(requireAuth, requireAdmin);
@@ -79,6 +80,14 @@ router.post('/clear-demo', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Failed to clear demo data' });
   }
+});
+
+// POST /api/admin/recompute-rankings — recompute stat profiles + rankings now.
+router.post('/recompute-rankings', async (req, res) => {
+  try {
+    const summary = await rankings.recompute(pool, { seasonLabel: process.env.SEASON_LABEL || 'current' });
+    res.json({ ok: true, ...summary });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to recompute rankings' }); }
 });
 
 module.exports = router;

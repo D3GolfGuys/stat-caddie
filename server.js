@@ -28,6 +28,7 @@ app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/rounds',        require('./routes/rounds'));
 app.use('/api/courses',       require('./routes/courses'));
 app.use('/api/schools',       require('./routes/schools'));
+app.use('/api/rankings',      require('./routes/rankings'));
 app.use('/api/teams',         require('./routes/teams'));
 app.use('/api/scoreboard',    require('./routes/scoreboard'));
 app.use('/api/admin',         require('./routes/admin'));
@@ -48,6 +49,16 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 3000;
 initDB().then(() => {
   app.listen(PORT, () => console.log(`⛳ College Golf Metrics running on http://localhost:${PORT}`));
+  // Nightly rankings recompute (in-process scheduler; disable with RANKINGS_AUTO=false)
+  if (process.env.RANKINGS_AUTO !== 'false') {
+    const rankings = require('./services/rankings');
+    const { pool } = require('./db');
+    const run = () => rankings.recompute(pool, { seasonLabel: process.env.SEASON_LABEL || 'current' })
+      .then(s => console.log('🔁 Rankings recomputed:', s))
+      .catch(e => console.error('Rankings recompute failed:', e.message));
+    setTimeout(run, 30000);                       // once shortly after boot
+    setInterval(run, 24 * 60 * 60 * 1000);        // then daily
+  }
 }).catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);

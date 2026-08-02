@@ -86,6 +86,16 @@
         </div>
       </div>
 
+      <!-- Rankings -->
+      <div class="panel">
+        <h3>Rankings</h3>
+        <p class="page-sub" style="margin:0 0 12px;">Recompute every player's stat profile and the national / division / conference rankings from entered rounds. Runs automatically each night; use this to refresh now.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="btn-recompute" onclick="recomputeRankings()">Recompute rankings</button>
+          <span id="recompute-msg" style="font-size:13px;color:var(--muted);"></span>
+        </div>
+      </div>
+
       <!-- Rounds over time -->
       <div class="panel">
         <h3>Rounds logged — last 30 days</h3>
@@ -225,6 +235,19 @@ async function clearDemo() {
     }
   } catch { msg.style.color = '#9a3b2f'; msg.textContent = 'Network error.'; }
   btn.disabled = false;
+}
+</script>
+<script>
+async function recomputeRankings(){
+  const btn=document.getElementById('btn-recompute'), msg=document.getElementById('recompute-msg');
+  const old=btn.textContent; btn.disabled=true; btn.textContent='Recomputing…'; msg.textContent='';
+  try{
+    const r=await API.post('/api/admin/recompute-rankings',{});
+    const d=r?await r.json():{};
+    if(r&&r.ok){ msg.style.color='var(--green-mid)'; msg.textContent=`✅ ${d.players} players · ${d.rankingsInserted} rankings (season "${d.seasonLabel}").`; }
+    else { msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Failed to recompute.'; }
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error.'; }
+  btn.disabled=false; btn.textContent=old;
 }
 </script>
 </body>
