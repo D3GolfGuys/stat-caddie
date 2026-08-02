@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const requireAdmin = require('../middleware/requireAdmin');
-const { seedDemo, clearDemo } = require('../services/demoSeed');
+const { seedDemo, seedTeam, clearDemo } = require('../services/demoSeed');
 
 // Owner-only. Every route here requires a valid session AND the admin email.
 router.use(requireAuth, requireAdmin);
@@ -55,6 +55,18 @@ router.post('/seed-demo', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to seed demo data' });
+  }
+});
+
+// POST /api/admin/seed-team — create a demo team (coach + roster w/ rounds) so
+// the coach dashboard has data. Idempotent. Returns the shared demo login.
+router.post('/seed-team', async (req, res) => {
+  try {
+    const result = await seedTeam(pool);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to seed demo team' });
   }
 });
 

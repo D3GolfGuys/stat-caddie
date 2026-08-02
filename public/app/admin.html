@@ -77,6 +77,13 @@
           <button class="btn btn-outline btn-sm" id="btn-clear" onclick="clearDemo()">Remove demo data</button>
           <span id="demo-msg" style="font-size:13px;color:var(--muted);"></span>
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+        <p class="page-sub" style="margin:0 0 12px;">Seed a full demo <strong>team</strong> — a coach plus a 5-player roster, each with statted rounds — so the coach dashboard has data to show. Log in as the coach to view it. Re-seeding replaces their rounds; "Remove demo data" clears the team too.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="btn-seed-team" onclick="seedTeam()">Seed demo team</button>
+          <span id="team-msg" style="font-size:13px;color:var(--muted);"></span>
+        </div>
       </div>
 
       <!-- Rounds over time -->
@@ -184,8 +191,26 @@ async function seedDemo() {
   btn.disabled = false;
 }
 
+async function seedTeam() {
+  const btn = document.getElementById('btn-seed-team');
+  const msg = document.getElementById('team-msg');
+  btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = 'Seeding team…';
+  try {
+    const res = await API.post('/api/admin/seed-team', {});
+    const data = await res.json();
+    if (res.ok) {
+      msg.style.color = 'var(--green-dark)';
+      msg.innerHTML = `✓ Seeded team “${esc(data.team)}” — ${data.players.length} players, ${data.rounds} rounds. `
+        + `Log in as <strong>${esc(data.coachEmail)}</strong> / <strong>${esc(data.password)}</strong> to view the coach dashboard.`;
+    } else {
+      msg.style.color = '#9a3b2f'; msg.textContent = data.error || 'Seed failed.';
+    }
+  } catch { msg.style.color = '#9a3b2f'; msg.textContent = 'Network error.'; }
+  btn.disabled = false;
+}
+
 async function clearDemo() {
-  if (!confirm('Remove the demo players and all their rounds?')) return;
+  if (!confirm('Remove the demo players, the demo team, and all their rounds?')) return;
   const btn = document.getElementById('btn-clear');
   const msg = document.getElementById('demo-msg');
   btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = 'Removing…';

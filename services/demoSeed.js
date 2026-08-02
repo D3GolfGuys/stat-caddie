@@ -28,6 +28,27 @@ const DEMO_PLAYERS = [
   },
 ];
 
+// ── Demo TEAM ──────────────────────────────────────────────────────────────
+// A whole team (coach + roster) so the coach dashboard has real spread to show.
+// Uses the same DEMO_DOMAIN so clearDemo() sweeps it up too. Login for any of
+// these is the shared demo password below.
+const DEMO_TEAM_NAME = 'Demo University Golf';
+const DEMO_COACH = { name: 'Coach Alex Rivera', email: `coach@${DEMO_DOMAIN}` };
+
+// Five players spanning strong → developing so the leaderboard has a clear order.
+const TEAM_PLAYERS = [
+  { name: 'Jordan Miles',  email: `jordan@${DEMO_DOMAIN}`,
+    parBias: -0.05, parJitter: 0.85, fwProb: 0.70, girProb: 0.66, driveBase: 298, putts1Prob: 0.46, scramProb: 0.64, sandProb: 0.55, penProb: 0.04 },
+  { name: 'Sam Rivera',    email: `sam@${DEMO_DOMAIN}`,
+    parBias: 0.20,  parJitter: 0.95, fwProb: 0.64, girProb: 0.60, driveBase: 288, putts1Prob: 0.40, scramProb: 0.58, sandProb: 0.50, penProb: 0.06 },
+  { name: 'Taylor Quinn',  email: `taylor@${DEMO_DOMAIN}`,
+    parBias: 0.45,  parJitter: 1.05, fwProb: 0.58, girProb: 0.52, driveBase: 279, putts1Prob: 0.34, scramProb: 0.50, sandProb: 0.42, penProb: 0.08 },
+  { name: 'Drew Parker',   email: `drew@${DEMO_DOMAIN}`,
+    parBias: 0.70,  parJitter: 1.15, fwProb: 0.54, girProb: 0.46, driveBase: 272, putts1Prob: 0.30, scramProb: 0.45, sandProb: 0.36, penProb: 0.11 },
+  { name: 'Cameron Lee',   email: `cameron@${DEMO_DOMAIN}`,
+    parBias: 0.90,  parJitter: 1.30, fwProb: 0.48, girProb: 0.40, driveBase: 265, putts1Prob: 0.26, scramProb: 0.40, sandProb: 0.30, penProb: 0.14 },
+];
+
 // Standard par-72 layout (four 3s, four 5s, ten 4s).
 const PAR_LAYOUT = [4, 5, 4, 3, 4, 4, 5, 3, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4];
 // Stroke-index (handicap) per hole — arbitrary but valid 1–18.
@@ -293,12 +314,82 @@ async function seedDemo(pool) {
   }
 }
 
-// Remove the demo players entirely (rounds + holes cascade via FK).
+// Seed (or re-seed) a full demo TEAM: one coach (team_admin) + a roster of
+// players (team_member), each with statted rounds. Idempotent on email — the
+// coach and players are upserted and their rounds replaced, never duplicated.
+// Returns the shared login so the caller can surface it.
+async function seedTeam(pool) {
+  const client = await pool.connect();
+  const result = { team: DEMO_TEAM_NAME, coachEmail: DEMO_COACH.email, password: 'demo1234', players: [], rounds: 0 };
+  try {
+    await client.query('BEGIN');
+    const password_hash = await bcrypt.hash('demo1234', 12);
+
+    // 1) Coach (team_admin).
+    const { rows: cRows } = await client.query(
+      `INSERT INTO users (email, password_hash, name, role, subscription_status, subscription_plan)
+       VALUES ($1,$2,$3,'team_admin','active','team')
+       ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role='team_admin',
+         subscription_status='active', subscription_plan='team'
+       RETURNING id`,
+      [DEMO_COACH.email, password_hash, DEMO_COACH.name]
+    );
+    const coachId = cRows[0].id;
+
+    // 2) Team — reuse the coach's existing team if present, else create it.
+    let teamId;
+    const { rows: tExist } = await client.query('SELECT id FROM teams WHERE admin_user_id=$1', [coachId]);
+    if (tExist.length) {
+      teamId = tExist[0].id;
+      await client.query(`UPDATE teams SET name=$1, subscription_status='active', max_members=15 WHERE id=$2`, [DEMO_TEAM_NAME, teamId]);
+    } else {
+      const { rows: tRows } = await client.query(
+        `INSERT INTO teams (name, admin_user_id, subscription_status, max_members)
+         VALUES ($1,$2,'active',15) RETURNING id`,
+        [DEMO_TEAM_NAME, coachId]
+      );
+      teamId = tRows[0].id;
+    }
+    await client.query('UPDATE users SET team_id=$1 WHERE id=$2', [teamId, coachId]);
+
+    // 3) Players (team_member) with rounds.
+    for (let i = 0; i < TEAM_PLAYERS.length; i++) {
+      const p = TEAM_PLAYERS[i];
+      const { rows } = await client.query(
+        `INSERT INTO users (email, password_hash, name, role, team_id, subscription_status, subscription_plan)
+         VALUES ($1,$2,$3,'team_member',$4,'active','team')
+         ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role='team_member', team_id=EXCLUDED.team_id
+         RETURNING id`,
+        [p.email, password_hash, p.name, teamId]
+      );
+      const uid = rows[0].id;
+      await client.query('DELETE FROM rounds WHERE user_id=$1', [uid]);
+      const rounds = buildRounds(p, 5000 + i * 131);
+      for (const r of rounds) await insertRound(client, uid, r);
+      result.players.push({ name: p.name, email: p.email, rounds: rounds.length });
+      result.rounds += rounds.length;
+    }
+
+    await client.query('COMMIT');
+    return { ...result, teamId };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Remove the demo players (individuals + team) entirely. Rounds + holes cascade
+// via FK; the orphaned demo team row is removed by name afterwards.
 async function clearDemo(pool) {
   const { rowCount } = await pool.query(
     `DELETE FROM users WHERE email LIKE $1`, [`%@${DEMO_DOMAIN}`]
   );
-  return { removedUsers: rowCount };
+  const { rowCount: teamsRemoved } = await pool.query(
+    `DELETE FROM teams WHERE name=$1`, [DEMO_TEAM_NAME]
+  );
+  return { removedUsers: rowCount, removedTeams: teamsRemoved };
 }
 
-module.exports = { seedDemo, clearDemo, buildRounds, computeSummary, DEMO_PLAYERS, DEMO_DOMAIN };
+module.exports = { seedDemo, seedTeam, clearDemo, buildRounds, computeSummary, DEMO_PLAYERS, TEAM_PLAYERS, DEMO_DOMAIN, DEMO_TEAM_NAME, DEMO_COACH };
