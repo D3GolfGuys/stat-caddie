@@ -16,27 +16,66 @@ function issueToken(userId, res) {
 }
 
 // POST /api/auth/register
+// Two account types:
+//   • individual — a solo golfer (role 'individual').
+//   • coach      — creates a NEW team and becomes its admin (role 'team_admin').
+// Accepts the new `accountType` ('individual' | 'coach') and `teamName`, and
+// still honors the legacy `plan==='team'` selection so older clients keep working.
 router.post('/register', async (req, res) => {
-  const { email, password, name, plan } = req.body;
+  const { email, password, name, plan, accountType, teamName } = req.body;
   if (!email || !password || !name) return res.status(400).json({ error: 'Email, password and name are required' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
+  const isCoach = accountType === 'coach' || accountType === 'team' || plan === 'team';
+  const resolvedTeamName = String(teamName || '').trim() || `${name}'s Team`;
+  const betaMode = process.env.BETA_MODE === 'true';
+
+  const client = await pool.connect();
   try {
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    const existing = await client.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
     if (existing.rows.length) return res.status(409).json({ error: 'Email already registered' });
 
-    const betaMode = process.env.BETA_MODE === 'true';
     const password_hash = await bcrypt.hash(password, 12);
-    const { rows } = await pool.query(
+
+    if (isCoach) {
+      // Coach signup: create the coach, the team, and link them — atomically.
+      await client.query('BEGIN');
+      const { rows: userRows } = await client.query(
+        `INSERT INTO users (email, password_hash, name, role, subscription_status, subscription_plan)
+         VALUES ($1, $2, $3, 'team_admin', $4, 'team')
+         RETURNING id, email, name, role, subscription_status, subscription_plan`,
+        [email.toLowerCase(), password_hash, name, betaMode ? 'active' : 'inactive']
+      );
+      const user = userRows[0];
+      const { rows: teamRows } = await client.query(
+        `INSERT INTO teams (name, admin_user_id, subscription_status, max_members)
+         VALUES ($1, $2, $3, 15)
+         RETURNING id, name, max_members`,
+        [resolvedTeamName, user.id, betaMode ? 'active' : 'inactive']
+      );
+      const team = teamRows[0];
+      await client.query('UPDATE users SET team_id = $1 WHERE id = $2', [team.id, user.id]);
+      await client.query('COMMIT');
+
+      user.team_id = team.id;
+      issueToken(user.id, res);
+      return res.status(201).json({ user, team, accountType: 'coach', betaMode });
+    }
+
+    // Individual signup (unchanged behavior).
+    const { rows } = await client.query(
       'INSERT INTO users (email, password_hash, name, role, subscription_status, subscription_plan) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, role, subscription_status, subscription_plan',
       [email.toLowerCase(), password_hash, name, 'individual', betaMode ? 'active' : 'inactive', betaMode ? (plan || 'individual') : null]
     );
     const user = rows[0];
     issueToken(user.id, res);
-    res.status(201).json({ user, plan: plan || 'individual', betaMode });
+    return res.status(201).json({ user, plan: plan || 'individual', accountType: 'individual', betaMode });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error(err);
-    res.status(500).json({ error: 'Registration failed' });
+    return res.status(500).json({ error: 'Registration failed' });
+  } finally {
+    client.release();
   }
 });
 

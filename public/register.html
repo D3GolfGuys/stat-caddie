@@ -35,25 +35,30 @@
     <h1>Create your account</h1>
     <p class="auth-sub" id="auth-sub">You'll be redirected to complete payment after signing up.</p>
 
-    <!-- Plan Selection -->
+    <!-- Account type: Individual golfer vs Coach creating a team -->
     <div class="plan-toggle" id="plan-toggle">
-      <div class="plan-opt" id="opt-individual" onclick="selectPlan('individual')">
-        <div class="po-name">Individual</div>
+      <div class="plan-opt" id="opt-individual" onclick="selectType('individual')">
+        <div class="po-name">Individual Golfer</div>
         <div class="po-price">$9.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
-        <div class="po-desc">1 player · All features</div>
+        <div class="po-desc">Track your own game</div>
       </div>
-      <div class="plan-opt featured" id="opt-team" onclick="selectPlan('team')">
-        <div class="po-name">Team ⭐</div>
+      <div class="plan-opt featured" id="opt-team" onclick="selectType('coach')">
+        <div class="po-name">Coach · Team ⭐</div>
         <div class="po-price" style="color:var(--gold);">$39.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
-        <div class="po-desc">Up to 15 players</div>
+        <div class="po-desc">Create a team, invite players</div>
       </div>
     </div>
 
     <div id="error-msg"></div>
     <form id="reg-form">
-      <input type="hidden" id="selected-plan" value="individual">
+      <input type="hidden" id="account-type" value="individual">
+      <!-- Coach-only: name the team being created -->
+      <div class="form-group" id="team-name-group" style="display:none;">
+        <label for="teamName">Team name</label>
+        <input type="text" id="teamName" placeholder="e.g. Lincoln High Golf" autocomplete="organization">
+      </div>
       <div class="form-group">
-        <label for="name">Full name</label>
+        <label for="name" id="name-label">Full name</label>
         <input type="text" id="name" placeholder="Your name" required autocomplete="name">
       </div>
       <div class="form-group">
@@ -82,58 +87,93 @@
       document.getElementById('auth-sub').textContent = 'Free beta access — no payment required.';
       document.querySelector('.terms').style.display = 'none';
     }
-    selectPlan(selectedPlan);
+    selectType(selectedType);
   }).catch(() => {});
 
-  // Pre-select plan from URL
+  // Pre-select from URL: ?type=coach (or legacy ?plan=team) opens the coach path.
   const params = new URLSearchParams(window.location.search);
+  const urlType = params.get('type');
   const urlPlan = params.get('plan');
-  let selectedPlan = (urlPlan === 'team') ? 'team' : 'individual';
-  selectPlan(selectedPlan);
+  let selectedType = (urlType === 'coach' || urlPlan === 'team') ? 'coach' : 'individual';
+  selectType(selectedType);
 
-  function selectPlan(plan) {
-    selectedPlan = plan;
-    document.getElementById('selected-plan').value = plan;
-    document.getElementById('opt-individual').classList.toggle('selected', plan === 'individual');
-    document.getElementById('opt-team').classList.toggle('selected', plan === 'team');
+  function selectType(type) {
+    selectedType = type;
+    const isCoach = type === 'coach';
+    document.getElementById('account-type').value = type;
+    document.getElementById('opt-individual').classList.toggle('selected', !isCoach);
+    document.getElementById('opt-team').classList.toggle('selected', isCoach);
+
+    // Coach path reveals the Team name field and clarifies the name label.
+    const teamGroup = document.getElementById('team-name-group');
+    teamGroup.style.display = isCoach ? 'block' : 'none';
+    document.getElementById('teamName').required = isCoach;
+    document.getElementById('name-label').textContent = isCoach ? 'Your name (coach)' : 'Full name';
+    document.getElementById('auth-sub').textContent = betaMode
+      ? (isCoach ? 'Free beta access — create your team, then invite players.' : 'Free beta access — no payment required.')
+      : (isCoach ? 'You’ll set up your team, then complete payment.' : 'You’ll be redirected to complete payment after signing up.');
+
     document.getElementById('submit-btn').textContent = betaMode
-      ? 'Create Account →'
-      : (plan === 'team' ? 'Continue to Payment — $39.99/mo →' : 'Continue to Payment — $9.99/mo →');
+      ? (isCoach ? 'Create Team & Account →' : 'Create Account →')
+      : (isCoach ? 'Continue to Payment — $39.99/mo →' : 'Continue to Payment — $9.99/mo →');
   }
+
+  // Where a new account lands after signup, by type.
+  const homeFor = type => type === 'coach' ? '/app/team.html' : '/app/index.html';
+  const defaultBtnText = () => betaMode
+    ? (selectedType === 'coach' ? 'Create Team & Account →' : 'Create Account →')
+    : (selectedType === 'coach' ? 'Continue to Payment — $39.99/mo →' : 'Continue to Payment — $9.99/mo →');
 
   document.getElementById('reg-form').addEventListener('submit', async e => {
     e.preventDefault();
     const btn = document.getElementById('submit-btn');
     const errEl = document.getElementById('error-msg');
     errEl.style.display = 'none';
-    btn.textContent = 'Creating account…'; btn.disabled = true;
+
+    const isCoach = selectedType === 'coach';
+    const teamName = document.getElementById('teamName').value.trim();
+    if (isCoach && !teamName) {
+      errEl.textContent = 'Please enter a team name to create your team.'; errEl.style.display = 'block';
+      return;
+    }
+    // Coaches subscribe on the team plan; individuals on the individual plan.
+    const plan = isCoach ? 'team' : 'individual';
+
+    btn.textContent = isCoach ? 'Creating team…' : 'Creating account…'; btn.disabled = true;
 
     try {
-      // 1. Register user
+      // 1. Register (creates the team too, when accountType is 'coach').
       const res = await fetch('/api/auth/register', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: document.getElementById('name').value, email: document.getElementById('email').value, password: document.getElementById('password').value, plan: selectedPlan }),
+        body: JSON.stringify({
+          name: document.getElementById('name').value,
+          email: document.getElementById('email').value,
+          password: document.getElementById('password').value,
+          accountType: selectedType,
+          teamName: isCoach ? teamName : undefined,
+          plan,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) { errEl.textContent = data.error || 'Registration failed'; errEl.style.display='block'; btn.textContent='Continue to Payment →'; btn.disabled=false; return; }
+      if (!res.ok) { errEl.textContent = data.error || 'Registration failed'; errEl.style.display='block'; btn.textContent=defaultBtnText(); btn.disabled=false; return; }
 
       // Beta mode: account is already active — go straight into the app.
-      if (data.betaMode || betaMode) { window.location.href = '/app/index.html'; return; }
+      if (data.betaMode || betaMode) { window.location.href = homeFor(selectedType); return; }
 
-      // 2. Start Stripe checkout
+      // 2. Start Stripe checkout for the matching plan.
       btn.textContent = 'Redirecting to payment…';
       const chkRes = await fetch('/api/subscriptions/checkout', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: selectedPlan }),
+        body: JSON.stringify({ plan }),
       });
       const chkData = await chkRes.json();
-      if (!chkRes.ok || !chkData.url) { window.location.href = '/app/index.html'; return; }
+      if (!chkRes.ok || !chkData.url) { window.location.href = homeFor(selectedType); return; }
       window.location.href = chkData.url;
     } catch {
       errEl.textContent = 'Network error. Please try again.'; errEl.style.display='block';
-      btn.textContent='Continue to Payment →'; btn.disabled=false;
+      btn.textContent=defaultBtnText(); btn.disabled=false;
     }
   });
 </script>

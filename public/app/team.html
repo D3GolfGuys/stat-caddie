@@ -3,9 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Team — Stat Caddie</title>
+<title>Team Dashboard — Stat Caddie</title>
 <link rel="stylesheet" href="/css/main.css">
 <link rel="stylesheet" href="/css/app.css">
+<style>
+  /* Sortable header + roster niceties, scoped to this page */
+  .app-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  .app-table th.sortable:hover { color: var(--green-mid); }
+  .app-table th.sortable .arrow { font-size: 9px; opacity: .6; margin-left: 2px; }
+  .app-table tr.player-row { cursor: pointer; }
+  .app-table tr.player-row:hover td { background: #f0f8f0; }
+  .app-table tr.player-row.selected td { background: #e6f6ec; }
+  .rank-badge { display:inline-block; min-width:18px; text-align:center; font-weight:700; color:var(--muted); font-size:11px; }
+  .val-good { color: var(--green-mid); font-weight:700; }
+  .val-bad  { color: var(--blue); }
+  #player-detail { display:none; }
+  .detail-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .mini-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin:12px 0 4px; }
+  @media (max-width: 900px){ .mini-cards{ grid-template-columns:repeat(3,1fr);} }
+  .mini-card { background:#f6faf6; border:1px solid var(--border); border-radius:10px; padding:8px 10px; text-align:center; }
+  .mini-card .mc-val { font-size:16px; font-weight:800; color:var(--green-dark); }
+  .mini-card .mc-lbl { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-top:2px; }
+  .link-btn { background:none; border:none; color:var(--green-mid); font-weight:600; cursor:pointer; font-size:12px; }
+  .empty-hint { text-align:center; padding:22px; color:#aaa; }
+</style>
 </head>
 <body>
 <div id="app-shell">
@@ -27,7 +48,7 @@
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Team</div>
-        <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Roster</a>
+        <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Dashboard</a>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Account</div>
@@ -35,14 +56,14 @@
       </div>
     </div>
     <main id="app-main">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-        <div class="page-title" id="team-name">Team Roster</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px;flex-wrap:wrap;">
+        <div class="page-title" id="team-name">Team Dashboard</div>
         <button class="btn btn-primary btn-sm" onclick="openInvite()">+ Invite Player</button>
       </div>
-      <div class="page-sub">Manage players and view team stats.</div>
+      <div class="page-sub" id="team-sub">Your team at a glance — click a player to drill into their game.</div>
 
       <!-- Invite modal -->
-      <div id="invite-modal" style="display:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px;max-width:480px;">
+      <div id="invite-modal" style="display:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin:12px 0;max-width:520px;">
         <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;">Invite a Player</h3>
         <div class="form-group"><label>Player Email Address</label><input type="email" id="invite-email" placeholder="player@example.com"></div>
         <div style="display:flex;gap:8px;">
@@ -52,24 +73,57 @@
         <div id="invite-result" style="margin-top:12px;font-size:12px;"></div>
       </div>
 
-      <!-- Members table -->
+      <!-- Team KPI cards -->
+      <div class="stat-cards" id="team-cards" style="margin-top:12px;">
+        <div class="stat-card"><div class="sc-lbl">Players</div><div class="sc-val" id="k-players">—</div></div>
+        <div class="stat-card"><div class="sc-lbl">Rounds Logged</div><div class="sc-val" id="k-rounds">—</div></div>
+        <div class="stat-card gold"><div class="sc-lbl">Team Scoring Avg</div><div class="sc-val" id="k-score">—</div><div class="sc-sub" id="k-vspar"></div></div>
+        <div class="stat-card gold"><div class="sc-lbl">Team FW%</div><div class="sc-val" id="k-fw">—</div></div>
+        <div class="stat-card gold"><div class="sc-lbl">Team GIR%</div><div class="sc-val" id="k-gir">—</div></div>
+        <div class="stat-card blue"><div class="sc-lbl">Team Avg Putts</div><div class="sc-val" id="k-putts">—</div></div>
+      </div>
+
+      <!-- Roster / leaderboard -->
       <div class="table-card" style="margin-bottom:16px;">
-        <div class="table-card-header"><h3>Players</h3><span id="member-count" style="font-size:12px;color:var(--muted);"></span></div>
-        <table class="app-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
-          <tbody id="members-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa;">Loading…</td></tr></tbody>
+        <div class="table-card-header">
+          <h3>Roster &amp; Leaderboard</h3>
+          <span id="member-count" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <table class="app-table" id="roster-table">
+          <thead>
+            <tr>
+              <th style="width:26px;">#</th>
+              <th class="sortable" data-key="name" style="text-align:left;">Player <span class="arrow"></span></th>
+              <th class="sortable" data-key="rounds">Rounds <span class="arrow"></span></th>
+              <th class="sortable" data-key="scoringAvg">Avg <span class="arrow"></span></th>
+              <th class="sortable" data-key="vspar">vs Par <span class="arrow"></span></th>
+              <th class="sortable" data-key="fwPct">FW% <span class="arrow"></span></th>
+              <th class="sortable" data-key="girPct">GIR% <span class="arrow"></span></th>
+              <th class="sortable" data-key="putts">Putts <span class="arrow"></span></th>
+              <th class="sortable" data-key="scram">Scr% <span class="arrow"></span></th>
+              <th style="width:120px;"></th>
+            </tr>
+          </thead>
+          <tbody id="roster-tbody"><tr><td colspan="10" class="empty-hint">Loading…</td></tr></tbody>
         </table>
       </div>
 
-      <!-- Team stats -->
-      <div class="table-card">
-        <div class="table-card-header">
-          <h3>Team Round Log</h3>
-          <span id="team-rounds-count" style="font-size:12px;color:var(--muted);"></span>
+      <!-- Per-player drill-down -->
+      <div class="table-card" id="player-detail">
+        <div class="detail-head">
+          <div>
+            <h3 style="font-size:15px;font-weight:800;color:var(--green-dark);" id="pd-name">Player</h3>
+            <div style="font-size:12px;color:var(--muted);" id="pd-sub"></div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <a class="btn btn-outline btn-sm" id="pd-reports" href="/app/reports.html">Full Reports →</a>
+            <button class="link-btn" onclick="closeDetail()">✕ Close</button>
+          </div>
         </div>
-        <table class="app-table">
-          <thead><tr><th>Date</th><th>Player</th><th>Course</th><th>Tournament</th><th>Score</th><th>+/-</th><th>FW%</th><th>GIR%</th><th>Putts</th></tr></thead>
-          <tbody id="team-rounds-tbody"><tr><td colspan="9" style="text-align:center;padding:20px;color:#aaa;">Loading…</td></tr></tbody>
+        <div class="mini-cards" id="pd-cards"></div>
+        <table class="app-table" style="margin-top:8px;">
+          <thead><tr><th>Date</th><th>Course</th><th>Tournament</th><th>Rnd</th><th>Score</th><th>+/-</th><th>FW%</th><th>GIR%</th><th>Putts</th></tr></thead>
+          <tbody id="pd-rounds"><tr><td colspan="9" class="empty-hint">No rounds yet.</td></tr></tbody>
         </table>
       </div>
     </main>
@@ -79,80 +133,184 @@
 <script src="/js/api.js"></script>
 <script src="/js/appshell.js"></script>
 <script>
-const fmtVs = v => v==null?'—':(v===0?'E':(v>0?'+':'')+v);
+// ── formatters ──────────────────────────────────────────
+const fmtVs = v => v==null?'—':(Math.round(v*10)/10===0?'E':(v>0?'+':'')+ (Math.round(v*10)/10));
+const fmt1  = v => v==null?'—':Number(v).toFixed(1);
 const fmtP  = v => v==null?'—':Number(v).toFixed(1)+'%';
+const avg   = (arr,key) => { const v=arr.filter(s=>s&&s[key]!=null); return v.length ? v.reduce((a,b)=>a+b[key],0)/v.length : null; };
 
-function openInvite() { document.getElementById('invite-modal').style.display='block'; document.getElementById('invite-email').focus(); }
+// ── state ───────────────────────────────────────────────
+let TEAM=null, MEMBERS=[], ROUNDS=[];
+let sortKey='scoringAvg', sortDir=1;   // dir: 1 asc, -1 desc. Lower score is better → asc default.
+let selectedPlayer=null;
 
-async function sendInvite() {
-  const email = document.getElementById('invite-email').value.trim();
-  const res = document.getElementById('invite-result');
-  if (!email) return;
-  const r = await API.post('/api/teams/invite', { email });
-  if (!r) return;
-  const data = await r.json();
-  if (r.ok) {
-    res.innerHTML = `✅ Invite sent! Share this link with ${email}:<br><code style="word-break:break-all;font-size:11px;">${data.inviteUrl}</code>`;
-    res.style.color='var(--green-mid)';
+// Per-player season aggregates from round summaries.
+function statsFor(userId){
+  const rs = ROUNDS.filter(r => r.user_id === userId);
+  const sums = rs.map(r=>r.summary).filter(Boolean);
+  return {
+    rounds: rs.length,
+    scoringAvg: avg(sums,'totalScore'),
+    vspar: avg(sums,'vspar'),
+    fwPct: avg(sums,'fwPct'),
+    girPct: avg(sums,'girPct'),
+    putts: avg(sums,'puttsTotal'),
+    scram: avg(sums,'scramblingPct'),
+  };
+}
+
+// ── invite / manage ─────────────────────────────────────
+function openInvite(){ const m=document.getElementById('invite-modal'); m.style.display='block'; document.getElementById('invite-email').focus(); }
+async function sendInvite(){
+  const email=document.getElementById('invite-email').value.trim();
+  const out=document.getElementById('invite-result');
+  if(!email) return;
+  const r=await API.post('/api/teams/invite',{email});
+  if(!r) return;
+  const data=await r.json();
+  if(r.ok){
+    out.innerHTML=`✅ Invite ready. Share this link with ${email}:<br><code style="word-break:break-all;font-size:11px;">${data.inviteUrl}</code>`;
+    out.style.color='var(--green-mid)';
     document.getElementById('invite-email').value='';
-    loadMembers();
-  } else {
-    res.textContent = data.error || 'Failed to send invite'; res.style.color='var(--red)';
-  }
+    await load();
+  } else { out.textContent=data.error||'Failed to send invite'; out.style.color='var(--red)'; }
+}
+async function removeMember(userId, name, ev){
+  ev.stopPropagation();
+  if(!confirm(`Remove ${name} from the team? Their rounds stay in their own account.`)) return;
+  const r=await API.del(`/api/teams/members/${userId}`);
+  if(r&&r.ok){ if(selectedPlayer===userId) closeDetail(); await load(); }
 }
 
-async function removeMember(userId, name) {
-  if (!confirm(`Remove ${name} from the team?`)) return;
-  const r = await API.del(`/api/teams/members/${userId}`);
-  if (r && r.ok) loadMembers();
+// ── render ──────────────────────────────────────────────
+function renderTeamCards(){
+  const sums = ROUNDS.map(r=>r.summary).filter(Boolean);
+  document.getElementById('k-players').textContent = MEMBERS.length;
+  document.getElementById('k-rounds').textContent  = ROUNDS.length;
+  document.getElementById('k-score').textContent   = fmt1(avg(sums,'totalScore'));
+  const vp = avg(sums,'vspar');
+  document.getElementById('k-vspar').textContent   = vp==null?'':fmtVs(vp)+' vs par';
+  document.getElementById('k-fw').textContent      = fmtP(avg(sums,'fwPct'));
+  document.getElementById('k-gir').textContent     = fmtP(avg(sums,'girPct'));
+  document.getElementById('k-putts').textContent   = fmt1(avg(sums,'puttsTotal'));
 }
 
-async function loadMembers() {
-  const r = await API.get('/api/teams/me');
-  if (!r || !r.ok) return;
-  const { team, members } = await r.json();
-  if (team) document.getElementById('team-name').textContent = team.name || 'Team Roster';
-  document.getElementById('member-count').textContent = `${members.length} / ${team?.max_members||15} players`;
-
-  const tbody = document.getElementById('members-tbody');
-  if (!members.length) { tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#aaa;">No players yet. Invite your first player above.</td></tr>'; return; }
-  tbody.innerHTML = members.map(m => `<tr>
-    <td><strong>${m.name}</strong></td>
-    <td>${m.email}</td>
-    <td><span class="badge badge-${m.role==='team_admin'?'gold':'active'}">${m.role==='team_admin'?'Admin':'Player'}</span></td>
-    <td>${m.created_at ? new Date(m.created_at).toLocaleDateString() : '—'}</td>
-    <td>${m.role!=='team_admin' ? `<button class="btn btn-danger btn-sm" onclick="removeMember(${m.id},'${m.name}')">Remove</button>` : ''}</td>
-  </tr>`).join('');
+function sortedRoster(){
+  const rows = MEMBERS.map(m => ({ m, s: statsFor(m.id) }));
+  const nulls = (v)=> v==null; // push players with no data (or no such stat) to the bottom
+  rows.sort((a,b)=>{
+    if(sortKey==='name'){ return sortDir * a.m.name.localeCompare(b.m.name); }
+    const av=a.s[sortKey], bv=b.s[sortKey];
+    if(nulls(av)&&nulls(bv)) return 0;
+    if(nulls(av)) return 1;      // nulls always last regardless of dir
+    if(nulls(bv)) return -1;
+    return sortDir * (av-bv);
+  });
+  return rows;
 }
 
-async function loadTeamRounds() {
-  const r = await API.get('/api/teams/rounds');
-  if (!r || !r.ok) return;
-  const rounds = await r.json();
-  document.getElementById('team-rounds-count').textContent = `${rounds.length} rounds`;
-  const tbody = document.getElementById('team-rounds-tbody');
-  if (!rounds.length) { tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#aaa;">No rounds logged yet.</td></tr>'; return; }
-  tbody.innerHTML = rounds.slice(0,50).map(r => {
-    const s = r.summary || {};
-    const vs = s.vspar;
-    return `<tr>
-      <td>${r.round_date||'—'}</td>
-      <td>${r.user_name||r.player_name||'—'}</td>
-      <td>${r.course_name||'—'}</td>
-      <td>${r.tournament||'—'}</td>
-      <td><strong>${s.totalScore||'—'}</strong></td>
-      <td style="${vs<0?'color:var(--red);font-weight:700':vs>0?'color:var(--blue)':''}">${fmtVs(vs)}</td>
-      <td>${fmtP(s.fwPct)}</td><td>${fmtP(s.girPct)}</td><td>${s.puttsTotal||'—'}</td>
+function renderRoster(){
+  const rows = sortedRoster();
+  document.getElementById('member-count').textContent = `${MEMBERS.length} / ${TEAM?.max_members||15} players`;
+  const tb=document.getElementById('roster-tbody');
+  if(!MEMBERS.length){ tb.innerHTML='<tr><td colspan="10" class="empty-hint">No players yet. Invite your first player above.</td></tr>'; return; }
+  tb.innerHTML = rows.map((row,i)=>{
+    const {m,s}=row;
+    const isCoach = m.role==='team_admin';
+    const badge = isCoach ? '<span class="badge badge-gold">Coach</span>' : '';
+    const vsClass = s.vspar!=null ? (s.vspar<0?'val-good':s.vspar>0?'val-bad':'') : '';
+    return `<tr class="player-row ${selectedPlayer===m.id?'selected':''}" onclick="openDetail(${m.id})">
+      <td><span class="rank-badge">${s.rounds?i+1:'–'}</span></td>
+      <td style="text-align:left;"><strong>${m.name}</strong> ${badge}</td>
+      <td>${s.rounds||'—'}</td>
+      <td><strong>${fmt1(s.scoringAvg)}</strong></td>
+      <td class="${vsClass}">${fmtVs(s.vspar)}</td>
+      <td>${fmtP(s.fwPct)}</td>
+      <td>${fmtP(s.girPct)}</td>
+      <td>${fmt1(s.putts)}</td>
+      <td>${fmtP(s.scram)}</td>
+      <td style="white-space:nowrap;">
+        <button class="link-btn" onclick="event.stopPropagation();openDetail(${m.id})">View</button>
+        ${!isCoach ? `· <button class="link-btn" style="color:var(--red);" onclick="removeMember(${m.id},'${m.name.replace(/'/g,"\\'")}',event)">Remove</button>`:''}
+      </td>
     </tr>`;
   }).join('');
+  // sort arrows
+  document.querySelectorAll('th.sortable').forEach(th=>{
+    const a=th.querySelector('.arrow');
+    a.textContent = th.dataset.key===sortKey ? (sortDir===1?'▲':'▼') : '';
+  });
+}
+
+// ── drill-down ──────────────────────────────────────────
+function openDetail(userId){
+  selectedPlayer=userId;
+  const m=MEMBERS.find(x=>x.id===userId); if(!m) return;
+  const s=statsFor(userId);
+  const rs=ROUNDS.filter(r=>r.user_id===userId);
+
+  document.getElementById('pd-name').textContent = m.name + (m.role==='team_admin'?' (Coach)':'');
+  document.getElementById('pd-sub').textContent  = `${s.rounds} round${s.rounds===1?'':'s'} logged`;
+
+  document.getElementById('pd-cards').innerHTML = [
+    ['Scoring Avg', fmt1(s.scoringAvg)],
+    ['vs Par', fmtVs(s.vspar)],
+    ['FW%', fmtP(s.fwPct)],
+    ['GIR%', fmtP(s.girPct)],
+    ['Avg Putts', fmt1(s.putts)],
+    ['Scrambling', fmtP(s.scram)],
+  ].map(([lbl,val])=>`<div class="mini-card"><div class="mc-val">${val}</div><div class="mc-lbl">${lbl}</div></div>`).join('');
+
+  const tb=document.getElementById('pd-rounds');
+  if(!rs.length){ tb.innerHTML='<tr><td colspan="9" class="empty-hint">No rounds logged yet.</td></tr>'; }
+  else tb.innerHTML = rs.slice(0,50).map(r=>{
+    const su=r.summary||{}; const vs=su.vspar;
+    return `<tr>
+      <td>${r.round_date||'—'}</td>
+      <td>${r.course_name||'—'}</td>
+      <td>${r.tournament||'—'}</td>
+      <td>${r.round_num||'—'}</td>
+      <td><strong>${su.totalScore||'—'}</strong></td>
+      <td style="${vs<0?'color:var(--red);font-weight:700':vs>0?'color:var(--blue)':''}">${fmtVs(vs)}</td>
+      <td>${fmtP(su.fwPct)}</td><td>${fmtP(su.girPct)}</td><td>${su.puttsTotal||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const panel=document.getElementById('player-detail');
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+  renderRoster(); // refresh selected-row highlight
+}
+function closeDetail(){ selectedPlayer=null; document.getElementById('player-detail').style.display='none'; renderRoster(); }
+
+// ── sorting ─────────────────────────────────────────────
+document.querySelectorAll('th.sortable').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key=th.dataset.key;
+    if(sortKey===key){ sortDir=-sortDir; }
+    else { sortKey=key; sortDir = (key==='name'||key==='scoringAvg'||key==='putts'||key==='vspar') ? 1 : -1; }
+    renderRoster();
+  });
+});
+
+// ── load ────────────────────────────────────────────────
+async function load(){
+  const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
+  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; if(TEAM) document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; }
+  if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
+  renderTeamCards();
+  renderRoster();
+  if(selectedPlayer && MEMBERS.some(m=>m.id===selectedPlayer)) openDetail(selectedPlayer);
 }
 
 (async () => {
   const user = await initApp();
-  if (!user) return;
-  if (user.role !== 'team_admin') { document.getElementById('app-main').innerHTML='<div class="page-title">Team Admin Only</div><p style="color:var(--muted);margin-top:8px;">Only team administrators can access this page.</p>'; return; }
-  loadMembers();
-  loadTeamRounds();
+  if(!user) return;
+  if(user.role!=='team_admin'){
+    document.getElementById('app-main').innerHTML='<div class="page-title">Coaches only</div><p style="color:var(--muted);margin-top:8px;">This is the team dashboard for coaches. <a href="/app/index.html">Back to your dashboard →</a></p>';
+    return;
+  }
+  await load();
 })();
 </script>
 </body>

@@ -86,9 +86,9 @@ router.delete('/members/:userId', requireTeamAdmin, async (req, res) => {
 // GET /api/teams/rounds  — all rounds for the team (admin only)
 router.get('/rounds', requireTeamAdmin, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT r.id, r.player_name, u.name as user_name, r.tournament, r.round_num, r.round_date, r.course_name, r.summary, r.created_at
+    `SELECT r.id, u.id AS user_id, r.player_name, u.name as user_name, r.tournament, r.round_num, r.round_date, r.course_name, r.summary, r.created_at
      FROM rounds r JOIN users u ON u.id = r.user_id
-     WHERE u.team_id=$1 ORDER BY r.round_date DESC NULLS LAST, r.created_at DESC LIMIT 200`,
+     WHERE u.team_id=$1 ORDER BY r.round_date DESC NULLS LAST, r.created_at DESC LIMIT 500`,
     [req.user.team_id]
   );
   res.json(rows);

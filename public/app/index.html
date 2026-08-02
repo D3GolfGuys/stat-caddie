@@ -92,6 +92,8 @@ const fmtP  = v => v == null ? '—' : Number(v).toFixed(1)+'%';
 (async () => {
   const user = await initApp();
   if (!user) return;
+  // Coaches are team-first: send them to the team dashboard as their home.
+  if (user.role === 'team_admin') { window.location.replace('/app/team.html'); return; }
   document.getElementById('welcome-title').textContent = `Welcome back, ${user.name.split(' ')[0]}`;
 
   const res = await API.get('/api/rounds?limit=20');
