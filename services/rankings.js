@@ -121,7 +121,10 @@ async function recompute(pool, opts = {}) {
   const map = await provisionPlayers(pool, seasonId);
   const prof = await computeProfiles(pool, seasonId, map);
   const rank = await computeRankings(pool, seasonId);
-  return { seasonId, seasonLabel: label, players: Object.keys(map).length, profileUpserts: prof.upserts, rankingsInserted: rank.inserted };
+  const tprof = await computeTeamProfiles(pool, seasonId);
+  const trank = await computeTeamRankings(pool, seasonId);
+  return { seasonId, seasonLabel: label, players: Object.keys(map).length, profileUpserts: prof.upserts,
+    rankingsInserted: rank.inserted, teams: tprof.teams, teamProfileUpserts: tprof.upserts, teamRankingsInserted: trank.inserted };
 }
 
 async function getPlayerRankings(db, userId, seasonId) {
@@ -150,5 +153,104 @@ async function getLeaderboard(db, { metricKey, segmentType = 'national', segment
     [metricKey, segmentType, segmentValue, seasonId, Math.min(Number(limit) || 25, 100)])).rows;
 }
 
-module.exports = { recompute, getCurrentSeasonId, getPlayerRankings, getLeaderboard,
-  ensureSeason, provisionPlayers, computeProfiles, computeRankings };
+const TEAM_SEGMENTS = [
+  { type: 'national',   expr: `'ALL'` },
+  { type: 'division',   expr: `t.division` },
+  { type: 'conference', expr: `t.conference` },
+];
+
+// A team's profile = aggregate of its players' rounds (coaches excluded).
+async function computeTeamProfiles(db, seasonId) {
+  const mrows = (await db.query(`SELECT id, key FROM metrics`)).rows;
+  const metricId = {}; mrows.forEach(m => (metricId[m.key] = m.id));
+  const teams = (await db.query(
+    `SELECT DISTINCT t.id FROM teams t
+       JOIN users u ON u.team_id = t.id AND u.role <> 'team_admin'
+       JOIN rounds r ON r.user_id = u.id`)).rows;
+  let count = 0, upserts = 0;
+  for (const t of teams) {
+    const rounds = (await db.query(
+      `SELECT r.summary, r.tournament FROM rounds r
+         JOIN users u ON u.id = r.user_id
+        WHERE u.team_id = $1 AND u.role <> 'team_admin'`, [t.id])).rows;
+    if (!rounds.length) continue;
+    const season = computeSeason(rounds);
+    const vals = metricValues(season);
+    const sampleN = season.rounds;
+    for (const key of Object.keys(vals)) {
+      const mid = metricId[key]; if (!mid) continue;
+      let v = vals[key]; if (v == null || Number.isNaN(v)) v = null;
+      await db.query(`
+        INSERT INTO team_metric_season (team_id, season_id, metric_id, value, sample_n, computed_at)
+        VALUES ($1,$2,$3,$4,$5,NOW())
+        ON CONFLICT (team_id, season_id, metric_id) DO UPDATE SET
+          value = EXCLUDED.value, sample_n = EXCLUDED.sample_n, computed_at = NOW()`,
+        [t.id, seasonId, mid, v, sampleN]);
+      upserts++;
+    }
+    count++;
+  }
+  return { teams: count, upserts };
+}
+
+async function computeTeamRankings(db, seasonId) {
+  await db.query(`DELETE FROM team_rankings WHERE season_id = $1`, [seasonId]);
+  let inserted = 0;
+  for (const seg of TEAM_SEGMENTS) {
+    const res = await db.query(`
+      INSERT INTO team_rankings (metric_id, season_id, segment_type, segment_value, team_id, value, rank, percentile, sample_n, cohort_n, computed_at)
+      SELECT metric_id, season_id, $2, seg, team_id, value, rnk,
+             CASE WHEN cohort_n > 1 THEN ROUND(100.0 * (cohort_n - rnk) / (cohort_n - 1), 2) ELSE 100 END,
+             sample_n, cohort_n, NOW()
+      FROM (
+        SELECT tms.metric_id, tms.season_id, ${seg.expr} AS seg, tms.team_id, tms.value, tms.sample_n,
+               RANK() OVER w AS rnk,
+               COUNT(*) OVER (PARTITION BY tms.metric_id, ${seg.expr}) AS cohort_n
+        FROM team_metric_season tms
+        JOIN metrics m ON m.id = tms.metric_id
+        JOIN teams t ON t.id = tms.team_id
+        WHERE tms.season_id = $1 AND m.rankable AND tms.value IS NOT NULL
+          AND tms.sample_n >= m.min_sample AND ${seg.expr} IS NOT NULL
+        WINDOW w AS (
+          PARTITION BY tms.metric_id, ${seg.expr}
+          ORDER BY tms.value * (CASE WHEN m.direction = 'lower' THEN 1 ELSE -1 END) ASC
+        )
+      ) x`, [seasonId, seg.type]);
+    inserted += res.rowCount || 0;
+  }
+  return { inserted };
+}
+
+async function getTeamLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', limit = 25 } = {}) {
+  const seasonId = await getCurrentSeasonId(db);
+  if (!seasonId || !metricKey) return [];
+  return (await db.query(`
+    SELECT t.name AS team, t.division, t.conference,
+           tr.value, tr.rank, tr.percentile, tr.cohort_n
+      FROM team_rankings tr
+      JOIN metrics m ON m.id = tr.metric_id
+      JOIN teams t ON t.id = tr.team_id
+     WHERE m.key = $1 AND tr.segment_type = $2 AND tr.segment_value = $3 AND tr.season_id = $4
+     ORDER BY tr.rank ASC LIMIT $5`,
+    [metricKey, segmentType, segmentValue, seasonId, Math.min(Number(limit) || 25, 100)])).rows;
+}
+
+async function getTeamRankings(db, teamId, seasonId) {
+  return (await db.query(`
+    SELECT m.key, m.display_name, m.category, m.unit, m.decimals, m.direction,
+           tr.segment_type, tr.segment_value, tr.value, tr.rank, tr.percentile, tr.cohort_n
+      FROM team_rankings tr
+      JOIN metrics m ON m.id = tr.metric_id
+     WHERE tr.team_id = $1 AND tr.season_id = $2
+     ORDER BY m.sort_order ASC, tr.segment_type ASC`, [teamId, seasonId])).rows;
+}
+
+async function listMetrics(db) {
+  return (await db.query(
+    `SELECT key, display_name, category, unit, decimals, direction
+       FROM metrics WHERE rankable ORDER BY sort_order ASC`)).rows;
+}
+
+module.exports = { recompute, getCurrentSeasonId, getPlayerRankings, getLeaderboard, listMetrics,
+  getTeamLeaderboard, getTeamRankings,
+  ensureSeason, provisionPlayers, computeProfiles, computeRankings, computeTeamProfiles, computeTeamRankings };

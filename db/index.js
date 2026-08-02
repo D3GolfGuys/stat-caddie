@@ -356,6 +356,39 @@ const schema = `
   -- ===================================================================
   CREATE UNIQUE INDEX IF NOT EXISTS uniq_college_players_user
     ON college_players(user_id) WHERE user_id IS NOT NULL;
+
+  -- ===================================================================
+  --  PHASE 2c - Team stat rankings (program-level profiles + rankings)
+  -- ===================================================================
+  CREATE TABLE IF NOT EXISTS team_metric_season (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE NOT NULL,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
+    metric_id INTEGER REFERENCES metrics(id) ON DELETE CASCADE NOT NULL,
+    value DECIMAL(10,3),
+    sample_n INTEGER DEFAULT 0,
+    computed_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(team_id, season_id, metric_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tms_metric_season ON team_metric_season(metric_id, season_id);
+
+  CREATE TABLE IF NOT EXISTS team_rankings (
+    id SERIAL PRIMARY KEY,
+    metric_id INTEGER REFERENCES metrics(id) ON DELETE CASCADE NOT NULL,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
+    segment_type VARCHAR(16) NOT NULL,
+    segment_value VARCHAR(255) NOT NULL,
+    team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE NOT NULL,
+    value DECIMAL(10,3),
+    rank INTEGER,
+    percentile DECIMAL(5,2),
+    sample_n INTEGER,
+    cohort_n INTEGER,
+    computed_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(metric_id, season_id, segment_type, segment_value, team_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_team_rankings_lookup ON team_rankings(metric_id, season_id, segment_type, segment_value, rank);
+  CREATE INDEX IF NOT EXISTS idx_team_rankings_team ON team_rankings(team_id, season_id);
 `;
 
 async function initDB() {

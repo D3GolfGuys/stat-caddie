@@ -13,17 +13,35 @@ router.get('/me', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load rankings' }); }
 });
 
-// GET /api/rankings/leaderboard?metric=&segment_type=&segment_value=&limit=
+// GET /api/rankings/metrics — rankable metrics for the leaderboard picker.
+router.get('/metrics', async (req, res) => {
+  try { res.json({ metrics: await rankings.listMetrics(pool) }); }
+  catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load metrics' }); }
+});
+
+// GET /api/rankings/leaderboard?metric=&segment_type=&segment_value=&limit=&scope=player|team
 router.get('/leaderboard', async (req, res) => {
   try {
-    const rows = await rankings.getLeaderboard(pool, {
+    const opts = {
       metricKey: req.query.metric,
       segmentType: req.query.segment_type || 'national',
       segmentValue: req.query.segment_value || 'ALL',
       limit: req.query.limit,
-    });
-    res.json({ leaderboard: rows });
+    };
+    const isTeam = req.query.scope === 'team';
+    const rows = isTeam ? await rankings.getTeamLeaderboard(pool, opts) : await rankings.getLeaderboard(pool, opts);
+    res.json({ scope: isTeam ? 'team' : 'player', leaderboard: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load leaderboard' }); }
+});
+
+// GET /api/rankings/team/me — the logged-in coach's team percentiles.
+router.get('/team/me', requireAuth, async (req, res) => {
+  try {
+    if (!req.user.team_id) return res.json({ season: null, rankings: [] });
+    const seasonId = await rankings.getCurrentSeasonId(pool);
+    if (!seasonId) return res.json({ season: null, rankings: [] });
+    res.json({ season: seasonId, rankings: await rankings.getTeamRankings(pool, req.user.team_id, seasonId) });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load team rankings' }); }
 });
 
 module.exports = router;

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leaderboards — College Golf Metrics</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+  nav{background:var(--green-dark);padding:0 24px;display:flex;align-items:center;height:58px;position:sticky;top:0;z-index:100}
+  .nav-logo{color:#fff;font-size:19px;font-weight:800;letter-spacing:.5px;flex:1;text-decoration:none}
+  .nav-logo span{color:var(--gold)}
+  .nav-links{display:flex;gap:18px;align-items:center}
+  .nav-links a{color:rgba(255,255,255,.85);font-size:14px;font-weight:500;text-decoration:none}
+  .nav-links a:hover{color:#fff}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 18px 70px}
+  .lb-title{font-size:26px;font-weight:800;color:var(--green-dark)}
+  .lb-sub{color:var(--muted);font-size:14px;margin-top:2px}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;margin:16px 0 6px}
+  .seg button{border:none;background:#fff;padding:8px 18px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--green-mid);color:#fff}
+  .controls{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 6px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+  select{padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:14px;color:var(--green-dark);min-width:190px}
+  .cohort{font-size:13px;color:var(--muted);margin:8px 0 12px}
+  table.lb{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  table.lb th{background:#f4f7f5;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:10px 14px}
+  table.lb td{padding:10px 14px;border-top:1px solid #eef3ef;font-size:14px}
+  table.lb tr:hover td{background:#f8fbf9}
+  .rk{font-weight:800;color:var(--green-dark);width:52px}
+  .rk.top{color:var(--gold)}
+  .val{font-weight:800;color:var(--green-dark)}
+  .pct{display:inline-block;min-width:30px;text-align:center;font-weight:700;border-radius:12px;padding:2px 8px;font-size:12px;background:#e6f6ec;color:#0a7d3c}
+  .dv{display:inline-block;font-size:11px;font-weight:700;background:#eef3ef;color:#4a5a52;border-radius:10px;padding:2px 8px}
+  .empty{text-align:center;color:#98a49c;padding:40px 12px}
+  .note{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="nav-logo">⛳ College Golf <span>Metrics</span></a>
+  <div class="nav-links">
+    <a href="/">Home</a>
+    <a href="/leaderboard.html">Leaderboards</a>
+    <a href="/login.html">Log In</a>
+  </div>
+</nav>
+<div class="wrap">
+  <div class="lb-title">College Golf Leaderboards</div>
+  <div class="lb-sub">Statistical rankings across all of college golf — from stats entered in College Golf Metrics.</div>
+
+  <div class="seg" id="scope-seg">
+    <button data-scope="player" class="on" onclick="setScope('player')">Players</button>
+    <button data-scope="team" onclick="setScope('team')">Teams</button>
+  </div>
+
+  <div class="controls">
+    <div class="field"><label for="metric">Statistic</label><select id="metric"></select></div>
+    <div class="field"><label for="view">View</label>
+      <select id="view">
+        <option value="national|ALL">All College Golf</option>
+        <option value="division|D1">NCAA Division I</option>
+        <option value="division|D2">NCAA Division II</option>
+        <option value="division|D3">NCAA Division III</option>
+        <option value="division|NAIA">NAIA</option>
+        <option value="division|NJCAA">NJCAA</option>
+      </select></div>
+    <div class="field"><label for="limit">Show</label>
+      <select id="limit"><option>25</option><option>50</option><option>100</option></select></div>
+  </div>
+
+  <div class="cohort" id="cohort"></div>
+  <table class="lb">
+    <thead><tr><th class="rk">#</th><th id="name-head">Player</th><th>Division</th><th id="val-head">Value</th><th>Percentile</th></tr></thead>
+    <tbody id="lb-body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+  </table>
+  <div class="note">Rankings are computed only from rounds entered in College Golf Metrics and refresh nightly. A player is ranked once they have enough rounds in a season; team rankings aggregate a program's players. Coverage — and precision — grow as more programs join. Percentile = share of the shown cohort beaten.</div>
+</div>
+<script>
+let METRICS=[], SCOPE='player';
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const fval=(v,m)=>{ if(v==null) return '—'; const n=Number(v).toFixed(m.decimals==null?1:m.decimals); return m.unit==='pct'?n+'%':n; };
+function currentMetric(){ const k=document.getElementById('metric').value; return METRICS.find(m=>m.key===k)||{unit:'',decimals:1,display_name:'Value'}; }
+function setScope(sc){ SCOPE=sc; document.querySelectorAll('#scope-seg button').forEach(b=>b.classList.toggle('on', b.dataset.scope===sc)); document.getElementById('name-head').textContent = sc==='team'?'Team':'Player'; load(); }
+async function loadMetrics(){
+  try{ const r=await fetch('/api/rankings/metrics'); METRICS=((await r.json()).metrics)||[]; }catch{ METRICS=[]; }
+  const sel=document.getElementById('metric'); const byCat={};
+  METRICS.forEach(m=>{ (byCat[m.category||'other']=byCat[m.category||'other']||[]).push(m); });
+  sel.innerHTML=Object.keys(byCat).map(cat=>`<optgroup label="${esc(cat)}">`+byCat[cat].map(m=>`<option value="${esc(m.key)}">${esc(m.display_name)}</option>`).join('')+`</optgroup>`).join('');
+  if(METRICS.some(m=>m.key==='scoring_avg')) sel.value='scoring_avg';
+}
+async function load(){
+  const m=currentMetric();
+  const [segType,segVal]=document.getElementById('view').value.split('|');
+  const limit=document.getElementById('limit').value;
+  document.getElementById('val-head').textContent=m.display_name||'Value';
+  const body=document.getElementById('lb-body'); body.innerHTML='<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  let rows=[];
+  try{
+    const url=`/api/rankings/leaderboard?metric=${encodeURIComponent(m.key)}&segment_type=${segType}&segment_value=${encodeURIComponent(segVal)}&limit=${limit}&scope=${SCOPE}`;
+    rows=((await (await fetch(url)).json()).leaderboard)||[];
+  }catch{ rows=[]; }
+  const cohortEl=document.getElementById('cohort');
+  const unit = SCOPE==='team'?'team':'player';
+  if(!rows.length){ body.innerHTML=`<tr><td colspan="5" class="empty">No ranked ${unit}s yet for this view. Rankings appear as ${SCOPE==='team'?'programs':'players'} enter rounds.</td></tr>`; cohortEl.textContent=''; return; }
+  cohortEl.textContent=`Ranked among ${rows[0].cohort_n} ${unit}${rows[0].cohort_n===1?'':'s'} · ${segType==='national'?'all college golf':segVal}`;
+  body.innerHTML=rows.map(r=>`<tr>
+    <td class="rk ${r.rank<=3?'top':''}">${r.rank}</td>
+    <td><strong>${esc(SCOPE==='team'?r.team:r.player)}</strong></td>
+    <td>${r.division?`<span class="dv">${esc(r.division)}</span>`:'—'}</td>
+    <td class="val">${fval(r.value,m)}</td>
+    <td>${r.percentile==null?'—':`<span class="pct">${Math.round(r.percentile)}</span>`}</td>
+  </tr>`).join('');
+}
+document.getElementById('metric').addEventListener('change',load);
+document.getElementById('view').addEventListener('change',load);
+document.getElementById('limit').addEventListener('change',load);
+(async()=>{ await loadMetrics(); await load(); })();
+</script>
+</body>
+</html>

@@ -37,6 +37,13 @@
   .sv-cell { border:1px solid var(--border); border-radius:8px; padding:8px 11px; background:#fcfdfc; }
   .sv-lab { font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.02em; }
   .sv-val { font-size:17px; font-weight:800; color:var(--green-dark); margin-top:2px; }
+  .trk{width:100%;border-collapse:collapse;font-size:12.5px}
+  .trk th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:5px 8px;border-bottom:1px solid var(--border)}
+  .trk td{padding:5px 8px;border-bottom:1px solid #eef3ef;vertical-align:top}
+  .trk .cat{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--green-dark);padding:8px 8px 2px}
+  .pctb{display:inline-block;min-width:30px;text-align:center;font-weight:800;border-radius:12px;padding:2px 8px;font-size:11.5px}
+  .pctb.hi{background:#e6f6ec;color:#0a7d3c}.pctb.mid{background:#fbf4dd;color:#8a6d00}.pctb.lo{background:#fbeae7;color:#9a3b2f}.pctb.na{background:#f3f4f5;color:#9aa8a0}
+  .pctsub{color:#6b7c73;font-size:10px}
 </style>
 </head>
 <body>
@@ -54,6 +61,7 @@
       <div class="sidebar-section">
         <div class="sidebar-label">Team</div>
         <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Dashboard</a>
+        <a href="/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Account</div>
@@ -144,6 +152,12 @@
         <div class="sv-grid" id="team-statview"></div>
       </div>
 
+      <!-- Team Rankings (national / division / conference percentiles) -->
+      <div class="table-card" style="margin-bottom:16px;">
+        <div class="table-card-header"><h3>Team Rankings</h3><span id="tr-note" style="font-size:12px;color:var(--muted);"></span></div>
+        <div id="team-rankings" style="overflow-x:auto;"><div class="empty-hint">Loading…</div></div>
+      </div>
+
       <!-- Per-player drill-down -->
       <div class="table-card" id="player-detail">
         <div class="detail-head">
@@ -218,6 +232,23 @@ async function saveSettings(){
   const r=await API.put('/api/teams/me',body); const d=r?await r.json():{};
   if(r&&r.ok){ out.style.color='var(--green-mid)'; out.textContent='✅ Saved. Rankings use this on the next nightly refresh (or ask the admin to recompute).'; await load(); setTimeout(()=>{document.getElementById('settings-modal').style.display='none';},1400); }
   else { out.style.color='var(--red)'; out.textContent=(d&&d.error)||'Failed to save.'; }
+}
+async function loadTeamRankings(){
+  const box=document.getElementById('team-rankings'), note=document.getElementById('tr-note');
+  let rows=[];
+  try{ const r=await API.get('/api/rankings/team/me'); rows=(r&&r.ok)?((await r.json()).rankings||[]):[]; }catch{ rows=[]; }
+  if(!rows.length){ box.innerHTML='<div class="empty-hint">No team rankings yet — set your division in ⚙ Team Settings and log rounds. Rankings refresh nightly.</div>'; note.textContent=''; return; }
+  const dv=rows.find(r=>r.segment_type==='division'); note.textContent = dv? 'Ranked in '+dv.segment_value : '';
+  const byKey=new Map();
+  for(const r of rows){ if(!byKey.has(r.key)) byKey.set(r.key,{name:r.display_name,category:r.category,unit:r.unit,decimals:r.decimals,value:r.value,segs:{}}); byKey.get(r.key).segs[r.segment_type]={percentile:r.percentile,rank:r.rank,cohort_n:r.cohort_n}; }
+  const pc=p=>p==null?'na':p>=67?'hi':p>=34?'mid':'lo';
+  const cell=seg=>seg?`<span class="pctb ${pc(seg.percentile)}">${seg.percentile==null?'—':Math.round(seg.percentile)}</span><div class="pctsub">#${seg.rank}/${seg.cohort_n}</div>`:'<span class="pctb na">—</span>';
+  const fv=(v,d,u)=>v==null?'—':(u==='pct'?Number(v).toFixed(d==null?1:d)+'%':Number(v).toFixed(d==null?1:d));
+  let html='<table class="trk"><thead><tr><th>Metric</th><th>Team</th><th>Division</th><th>Conference</th><th>National</th></tr></thead><tbody>'; let lc=null;
+  for(const [,m] of byKey){ if(m.category!==lc){ html+=`<tr><td colspan="5" class="cat">${m.category||''}</td></tr>`; lc=m.category; }
+    html+=`<tr><td><strong>${m.name}</strong></td><td>${fv(m.value,m.decimals,m.unit)}</td><td>${cell(m.segs.division)}</td><td>${cell(m.segs.conference)}</td><td>${cell(m.segs.national)}</td></tr>`; }
+  html+='</tbody></table>';
+  box.innerHTML=html;
 }
 async function sendInvite(){
   const email=document.getElementById('invite-email').value.trim();
@@ -386,6 +417,7 @@ async function load(){
   if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
   renderTeamSummary();
   renderRoster();
+  loadTeamRankings();
   if(selectedPlayer && MEMBERS.some(m=>m.id===selectedPlayer)) openDetail(selectedPlayer);
 }
 
