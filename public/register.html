@@ -31,18 +31,13 @@
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <div class="auth-logo"><a href="/">⛳ Stat <span>Caddie</span></a></div>
+    <div class="auth-logo"><a href="/">⛳ College Golf <span>Metrics</span></a></div>
     <h1>Create your account</h1>
     <p class="auth-sub" id="auth-sub">You'll be redirected to complete payment after signing up.</p>
 
-    <!-- Account type: Individual golfer vs Coach creating a team -->
-    <div class="plan-toggle" id="plan-toggle">
-      <div class="plan-opt" id="opt-individual" onclick="selectType('individual')">
-        <div class="po-name">Individual Golfer</div>
-        <div class="po-price">$9.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
-        <div class="po-desc">Track your own game</div>
-      </div>
-      <div class="plan-opt featured" id="opt-team" onclick="selectType('coach')">
+    <!-- Team / coach signup — individual plan retired -->
+    <div class="plan-toggle" id="plan-toggle" style="grid-template-columns:1fr;">
+      <div class="plan-opt featured selected" id="opt-team">
         <div class="po-name">Coach · Team ⭐</div>
         <div class="po-price" style="color:var(--gold);">$39.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
         <div class="po-desc">Create a team, invite players</div>
@@ -51,9 +46,9 @@
 
     <div id="error-msg"></div>
     <form id="reg-form">
-      <input type="hidden" id="account-type" value="individual">
+      <input type="hidden" id="account-type" value="coach">
       <!-- Coach-only: name the team being created -->
-      <div class="form-group" id="team-name-group" style="display:none;">
+      <div class="form-group" id="team-name-group" style="display:block;">
         <label for="teamName">Team name</label>
         <input type="text" id="teamName" placeholder="e.g. Lincoln High Golf" autocomplete="organization">
       </div>
@@ -94,14 +89,13 @@
   const params = new URLSearchParams(window.location.search);
   const urlType = params.get('type');
   const urlPlan = params.get('plan');
-  let selectedType = (urlType === 'coach' || urlPlan === 'team') ? 'coach' : 'individual';
+  let selectedType = 'coach'; // individual signup retired — team/coach only
   selectType(selectedType);
 
   function selectType(type) {
     selectedType = type;
     const isCoach = type === 'coach';
     document.getElementById('account-type').value = type;
-    document.getElementById('opt-individual').classList.toggle('selected', !isCoach);
     document.getElementById('opt-team').classList.toggle('selected', isCoach);
 
     // Coach path reveals the Team name field and clarifies the name label.
