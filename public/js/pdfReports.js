@@ -267,14 +267,18 @@
   function teamReport({ teamName, players, rounds }) {
     const JsPDF = ensureLib(); if (!JsPDF) return;
     players = players || []; rounds = rounds || [];
+    // A coach isn't a player — keep them (and any rounds they logged) out of the report.
+    const coachIds = new Set(players.filter(p => p.role === 'team_admin').map(p => p.id));
+    const roster = players.filter(p => p.role !== 'team_admin');
+    const playerRounds = rounds.filter(r => !coachIds.has(r.user_id));
     const doc = new JsPDF({ unit: 'pt', format: 'letter' });
-    drawTeamPage(doc, { teamName, players, rounds });
-    players.forEach((p, i) => {
+    drawTeamPage(doc, { teamName, players: roster, rounds: playerRounds });
+    roster.forEach((p, i) => {
       doc.addPage();
       drawPlayerPage(doc, {
-        name: p.name, tag: p.role === 'team_admin' ? 'COACH' : null,
-        meta: metaFor(teamName, `Player ${i + 1} of ${players.length}`),
-        rounds: rounds.filter(r => r.user_id === p.id),
+        name: p.name, tag: null,
+        meta: metaFor(teamName, `Player ${i + 1} of ${roster.length}`),
+        rounds: playerRounds.filter(r => r.user_id === p.id),
       });
     });
     stampFooters(doc);

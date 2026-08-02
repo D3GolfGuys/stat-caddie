@@ -26,6 +26,17 @@
   .mini-card .mc-lbl { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-top:2px; }
   .link-btn { background:none; border:none; color:var(--green-mid); font-weight:600; cursor:pointer; font-size:12px; }
   .empty-hint { text-align:center; padding:22px; color:#aaa; }
+  /* PDF-style team page: summary strip + StatView grid */
+  .summ-strip { display:flex; gap:10px; margin:12px 0 8px; flex-wrap:wrap; }
+  .summ-strip .ss-cell { flex:1; min-width:96px; background:#e8f3ec; border-radius:10px; padding:12px 8px; text-align:center; }
+  .summ-strip .ss-v { font-size:23px; font-weight:800; color:var(--green-dark); line-height:1.05; }
+  .summ-strip .ss-v.neg { color:#1f7a44; } .summ-strip .ss-v.pos { color:#c0392b; }
+  .summ-strip .ss-l { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-top:4px; }
+  .sv-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  @media(max-width:900px){ .sv-grid{ grid-template-columns:repeat(2,1fr);} }
+  .sv-cell { border:1px solid var(--border); border-radius:8px; padding:8px 11px; background:#fcfdfc; }
+  .sv-lab { font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.02em; }
+  .sv-val { font-size:17px; font-weight:800; color:var(--green-dark); margin-top:2px; }
 </style>
 </head>
 <body>
@@ -76,14 +87,13 @@
         <div id="invite-result" style="margin-top:12px;font-size:12px;"></div>
       </div>
 
-      <!-- Team KPI cards -->
-      <div class="stat-cards" id="team-cards" style="margin-top:12px;">
-        <div class="stat-card"><div class="sc-lbl">Players</div><div class="sc-val" id="k-players">—</div></div>
-        <div class="stat-card"><div class="sc-lbl">Rounds Logged</div><div class="sc-val" id="k-rounds">—</div></div>
-        <div class="stat-card gold"><div class="sc-lbl">Team Scoring Avg</div><div class="sc-val" id="k-score">—</div><div class="sc-sub" id="k-vspar"></div></div>
-        <div class="stat-card gold"><div class="sc-lbl">Team FW%</div><div class="sc-val" id="k-fw">—</div></div>
-        <div class="stat-card gold"><div class="sc-lbl">Team GIR%</div><div class="sc-val" id="k-gir">—</div></div>
-        <div class="stat-card blue"><div class="sc-lbl">Team Avg Putts</div><div class="sc-val" id="k-putts">—</div></div>
+      <!-- Team summary strip (matches the PDF team page) -->
+      <div class="summ-strip" id="team-strip">
+        <div class="ss-cell"><div class="ss-v" id="k-players">—</div><div class="ss-l">Players</div></div>
+        <div class="ss-cell"><div class="ss-v" id="k-tourn">—</div><div class="ss-l">Tournaments</div></div>
+        <div class="ss-cell"><div class="ss-v" id="k-rounds">—</div><div class="ss-l">Rounds</div></div>
+        <div class="ss-cell"><div class="ss-v" id="k-score">—</div><div class="ss-l">Avg Score</div></div>
+        <div class="ss-cell"><div class="ss-v" id="k-vspar">—</div><div class="ss-l">Vs Par</div></div>
       </div>
 
       <!-- Roster / leaderboard -->
@@ -111,6 +121,12 @@
         </table>
       </div>
 
+      <!-- Team StatView (matches the PDF team page) -->
+      <div class="table-card" style="margin-bottom:16px;">
+        <div class="table-card-header"><h3>Team StatView</h3></div>
+        <div class="sv-grid" id="team-statview"></div>
+      </div>
+
       <!-- Per-player drill-down -->
       <div class="table-card" id="player-detail">
         <div class="detail-head">
@@ -125,7 +141,8 @@
           </div>
         </div>
         <div class="mini-cards" id="pd-cards"></div>
-        <table class="app-table" style="margin-top:8px;">
+        <div class="sv-grid" id="pd-statview" style="margin-top:10px;"></div>
+        <table class="app-table" style="margin-top:12px;">
           <thead><tr><th>Date</th><th>Course</th><th>Tournament</th><th>Rnd</th><th>Score</th><th>+/-</th><th>FW%</th><th>GIR%</th><th>Putts</th></tr></thead>
           <tbody id="pd-rounds"><tr><td colspan="9" class="empty-hint">No rounds yet.</td></tr></tbody>
         </table>
@@ -190,20 +207,29 @@ async function removeMember(userId, name, ev){
 }
 
 // ── render ──────────────────────────────────────────────
-function renderTeamCards(){
-  const sums = ROUNDS.map(r=>r.summary).filter(Boolean);
-  document.getElementById('k-players').textContent = MEMBERS.length;
-  document.getElementById('k-rounds').textContent  = ROUNDS.length;
-  document.getElementById('k-score').textContent   = fmt1(avg(sums,'totalScore'));
-  const vp = avg(sums,'vspar');
-  document.getElementById('k-vspar').textContent   = vp==null?'':fmtVs(vp)+' vs par';
-  document.getElementById('k-fw').textContent      = fmtP(avg(sums,'fwPct'));
-  document.getElementById('k-gir').textContent     = fmtP(avg(sums,'girPct'));
-  document.getElementById('k-putts').textContent   = fmt1(avg(sums,'puttsTotal'));
+// Coaches aren't players — keep them (and their rounds) out of the team view.
+function playersOnly(){ return MEMBERS.filter(m => m.role !== 'team_admin'); }
+function playerRoundsOnly(){ const coach = new Set(MEMBERS.filter(m => m.role === 'team_admin').map(m => m.id)); return ROUNDS.filter(r => !coach.has(r.user_id)); }
+function svGridHTML(items){ return items.map(([lab,val]) => `<div class="sv-cell"><div class="sv-lab">${lab}</div><div class="sv-val">${val}</div></div>`).join(''); }
+
+function renderTeamSummary(){
+  const players = playersOnly();
+  const pr = playerRoundsOnly();
+  const season = window.StatCaddiePDF ? window.StatCaddiePDF.computeSeason(pr) : null;
+  document.getElementById('k-players').textContent = players.length;
+  document.getElementById('k-tourn').textContent   = season ? (season.tournaments || '—') : '—';
+  document.getElementById('k-rounds').textContent  = pr.length;
+  document.getElementById('k-score').textContent   = season ? fmt1(season.scoringAvg) : '—';
+  const vp = season ? season.vspar : null;
+  const vsEl = document.getElementById('k-vspar');
+  vsEl.textContent = fmtVs(vp);
+  vsEl.className = 'ss-v' + (vp == null ? '' : vp < 0 ? ' neg' : vp > 0 ? ' pos' : '');
+  const grid = document.getElementById('team-statview');
+  if (grid && season && window.StatCaddiePDF) grid.innerHTML = svGridHTML(window.StatCaddiePDF.statViewItems(season));
 }
 
 function sortedRoster(){
-  const rows = MEMBERS.map(m => ({ m, s: statsFor(m.id) }));
+  const rows = playersOnly().map(m => ({ m, s: statsFor(m.id) }));
   const nulls = (v)=> v==null; // push players with no data (or no such stat) to the bottom
   rows.sort((a,b)=>{
     if(sortKey==='name'){ return sortDir * a.m.name.localeCompare(b.m.name); }
@@ -218,9 +244,10 @@ function sortedRoster(){
 
 function renderRoster(){
   const rows = sortedRoster();
-  document.getElementById('member-count').textContent = `${MEMBERS.length} / ${TEAM?.max_members||15} players`;
+  const players = playersOnly();
+  document.getElementById('member-count').textContent = `${players.length} player${players.length===1?'':'s'}`;
   const tb=document.getElementById('roster-tbody');
-  if(!MEMBERS.length){ tb.innerHTML='<tr><td colspan="10" class="empty-hint">No players yet. Invite your first player above.</td></tr>'; return; }
+  if(!players.length){ tb.innerHTML='<tr><td colspan="10" class="empty-hint">No players yet. Invite your first player above.</td></tr>'; return; }
   tb.innerHTML = rows.map((row,i)=>{
     const {m,s}=row;
     const isCoach = m.role==='team_admin';
@@ -267,6 +294,9 @@ function openDetail(userId){
     ['Avg Putts', fmt1(s.putts)],
     ['Scrambling', fmtP(s.scram)],
   ].map(([lbl,val])=>`<div class="mini-card"><div class="mc-val">${val}</div><div class="mc-lbl">${lbl}</div></div>`).join('');
+
+  const svEl = document.getElementById('pd-statview');
+  if (svEl && window.StatCaddiePDF) svEl.innerHTML = svGridHTML(window.StatCaddiePDF.statViewItems(window.StatCaddiePDF.computeSeason(rs)));
 
   const tb=document.getElementById('pd-rounds');
   if(!rs.length){ tb.innerHTML='<tr><td colspan="9" class="empty-hint">No rounds logged yet.</td></tr>'; }
@@ -320,7 +350,7 @@ async function load(){
   const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
   if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; if(TEAM) document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; }
   if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
-  renderTeamCards();
+  renderTeamSummary();
   renderRoster();
   if(selectedPlayer && MEMBERS.some(m=>m.id===selectedPlayer)) openDetail(selectedPlayer);
 }
