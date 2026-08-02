@@ -58,7 +58,10 @@
     <main id="app-main">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px;flex-wrap:wrap;">
         <div class="page-title" id="team-name">Team Dashboard</div>
-        <button class="btn btn-primary btn-sm" onclick="openInvite()">+ Invite Player</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="downloadTeamPDF()">⬇ Team PDF</button>
+          <button class="btn btn-primary btn-sm" onclick="openInvite()">+ Invite Player</button>
+        </div>
       </div>
       <div class="page-sub" id="team-sub">Your team at a glance — click a player to drill into their game.</div>
 
@@ -115,7 +118,8 @@
             <h3 style="font-size:15px;font-weight:800;color:var(--green-dark);" id="pd-name">Player</h3>
             <div style="font-size:12px;color:var(--muted);" id="pd-sub"></div>
           </div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn btn-primary btn-sm" onclick="downloadPlayerPDF()">⬇ Player PDF</button>
             <a class="btn btn-outline btn-sm" id="pd-reports" href="/app/reports.html">Full Reports →</a>
             <button class="link-btn" onclick="closeDetail()">✕ Close</button>
           </div>
@@ -132,6 +136,9 @@
 
 <script src="/js/api.js"></script>
 <script src="/js/appshell.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="/js/pdfReports.js"></script>
 <script>
 // ── formatters ──────────────────────────────────────────
 const fmtVs = v => v==null?'—':(Math.round(v*10)/10===0?'E':(v>0?'+':'')+ (Math.round(v*10)/10));
@@ -282,6 +289,21 @@ function openDetail(userId){
   renderRoster(); // refresh selected-row highlight
 }
 function closeDetail(){ selectedPlayer=null; document.getElementById('player-detail').style.display='none'; renderRoster(); }
+
+// ── PDF exports ─────────────────────────────────────────
+function downloadTeamPDF(){
+  const players = MEMBERS.map(m => ({ name: m.name, role: m.role, stats: statsFor(m.id) }));
+  window.StatCaddiePDF.teamReport({ teamName: (TEAM && TEAM.name) || 'Team', players, rounds: ROUNDS });
+}
+function downloadPlayerPDF(){
+  if (!selectedPlayer) return;
+  const m = MEMBERS.find(x => x.id === selectedPlayer); if (!m) return;
+  window.StatCaddiePDF.playerReport({
+    playerName: m.name,
+    teamName: (TEAM && TEAM.name) || '',
+    rounds: ROUNDS.filter(r => r.user_id === selectedPlayer),
+  });
+}
 
 // ── sorting ─────────────────────────────────────────────
 document.querySelectorAll('th.sortable').forEach(th=>{

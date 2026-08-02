@@ -38,7 +38,10 @@
       <div style="background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:12px;">
         <strong style="color:var(--green-dark);">📊 Stats Reports</strong>
         <span>Rounds from your account are loaded automatically.</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="window.print()">🖨 Print</button>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="downloadMyReport()">⬇ Download PDF</button>
+          <button class="btn btn-outline btn-sm" onclick="window.print()">🖨 Print</button>
+        </div>
       </div>
 
       <!-- Reconciliation worklist: rounds needing stats, and score conflicts -->
@@ -78,7 +81,24 @@
 </div>
 <script src="/js/api.js"></script>
 <script src="/js/appshell.js"></script>
-<script>(async () => { await initApp(); await loadReconPanel(); })();
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="/js/pdfReports.js"></script>
+<script>
+let __user = null;
+(async () => { __user = await initApp(); await loadReconPanel(); })();
+
+// Download the signed-in player's season report as a PDF.
+async function downloadMyReport(){
+  const res = await API.get('/api/rounds?limit=500');
+  if(!res || !res.ok){ alert('Could not load your rounds for the report.'); return; }
+  const rounds = await res.json();
+  let teamName = '';
+  if(__user && __user.team_id){
+    try { const tr = await API.get('/api/teams/me'); if(tr && tr.ok){ const d = await tr.json(); teamName = (d.team && d.team.name) || ''; } } catch(e){}
+  }
+  window.StatCaddiePDF.playerReport({ playerName: (__user && __user.name) || 'Player', teamName, rounds });
+}
 
 // ── Reconciliation worklist ────────────────────────────────────────────────
 let _recon = { needs: [], conf: [] };
