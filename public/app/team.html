@@ -7,8 +7,6 @@
 <link rel="stylesheet" href="/css/main.css">
 <link rel="stylesheet" href="/css/app.css">
 <style>
-  /* Coach view is team-first: no sidebar, content centered full-width */
-  #app-main { max-width:1100px; margin:0 auto; }
   /* Sortable header + roster niceties, scoped to this page */
   .app-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
   .app-table th.sortable:hover { color: var(--green-mid); }
@@ -52,6 +50,16 @@
     </div>
   </nav>
   <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Dashboard</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
     <main id="app-main">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px;flex-wrap:wrap;">
         <div class="page-title" id="team-name">Team Dashboard</div>
