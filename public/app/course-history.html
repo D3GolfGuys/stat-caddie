@@ -17,6 +17,7 @@
   .ch-table tr.tough-row td{background:#fbefe9}
   .ch-table th.ch-sort{cursor:pointer;user-select:none;white-space:nowrap}
   .ch-table th.ch-sort:hover{color:var(--green-mid)}
+  .ch-table th.num, .ch-table td.num{text-align:center}
   .over{color:#c0392b;font-weight:700}.under{color:#1f7a44;font-weight:700}
   .mix{font-size:10px;color:var(--muted);margin-top:3px}
   .empty-hint{text-align:center;padding:22px;color:#aaa}
@@ -97,7 +98,7 @@ function renderHoles(holes){
   drawHoles();
 }
 let _holes=[], _holeSort={key:'hole_num', dir:1};
-const HOLE_DEFDIR={hole_num:1, par:1, plays:-1, avg_score:-1, avg_vs_par:-1}; // first-click direction
+const HOLE_DEFDIR={hole_num:1, par:1, plays:-1, avg_score:-1, avg_vs_par:-1, birdies:-1, pars:-1, bogeys:-1, doubles_plus:-1}; // first-click direction
 function sortHoles(key){
   if(_holeSort.key===key){ _holeSort.dir=-_holeSort.dir; } else { _holeSort={key, dir:(HOLE_DEFDIR[key]||1)}; }
   drawHoles();
@@ -110,17 +111,16 @@ function drawHoles(){
   const worst=new Set(byTough.slice(0,3).map(h=>h.hole_num));
   tough.style.display='block';
   tough.innerHTML='<strong>Toughest holes:</strong> '+byTough.slice(0,3).map(h=>`#${h.hole_num} (par ${h.par}, ${vsFmt(h.avg_vs_par)})`).join('   ·   ');
-  const maxAbs=Math.max(0.5, ...holes.map(h=>Math.abs(Number(h.avg_vs_par))));
   // apply the active column sort (ties fall back to hole number)
   const k=_holeSort.key, dir=_holeSort.dir;
   const rows=[...holes].sort((a,b)=>{ const av=Number(a[k]), bv=Number(b[k]); if(av<bv) return -dir; if(av>bv) return dir; return Number(a.hole_num)-Number(b.hole_num); });
-  const cols=[['hole_num','Hole'],['par','Par'],['plays','Plays'],['avg_score','Avg'],['avg_vs_par','vs Par']];
+  const cols=[['hole_num','Hole','l'],['par','Par','l'],['plays','Plays','l'],['avg_score','Avg','l'],['avg_vs_par','vs Par','l'],
+              ['birdies','Birdies','c'],['pars','Pars','c'],['bogeys','Bogeys','c'],['doubles_plus','Dbl+','c']];
   const arrow=key=> _holeSort.key===key ? (_holeSort.dir>0?' ▲':' ▼') : '';
-  const thead='<tr>'+cols.map(([key,lab])=>`<th class="ch-sort" onclick="sortHoles('${key}')" title="Sort by ${lab}">${lab}${arrow(key)}</th>`).join('')+'<th>Scoring mix (B/P/Bo/Db+)</th></tr>';
+  const thead='<tr>'+cols.map(([key,lab,al])=>`<th class="ch-sort${al==='c'?' num':''}" onclick="sortHoles('${key}')" title="Sort by ${lab}">${lab}${arrow(key)}</th>`).join('')+'</tr>';
   box.innerHTML='<table class="ch-table"><thead>'+thead+'</thead><tbody>'+
-    rows.map(h=>{ const vp=Number(h.avg_vs_par); const w=Math.min(50,Math.abs(vp)/maxAbs*50);
-      const bar='<div style="height:8px;border-radius:4px;background:#eef3ef;position:relative;margin-bottom:2px;"><div style="position:absolute;'+(vp>=0?'left:50%':'right:50%')+';width:'+w+'%;height:8px;border-radius:4px;background:'+(vp>0?'#c0392b':'#1f7a44')+';"></div></div>';
-      return `<tr class="${worst.has(h.hole_num)?'tough-row':''}"><td><strong>${h.hole_num}</strong></td><td>${h.par}</td><td>${h.plays}</td><td>${h.avg_score}</td><td class="${vp>0?'over':vp<0?'under':''}">${vsFmt(h.avg_vs_par)}</td><td style="min-width:150px;">${bar}<div class="mix">${h.birdies} / ${h.pars} / ${h.bogeys} / ${h.doubles_plus}</div></td></tr>`;
+    rows.map(h=>{ const vp=Number(h.avg_vs_par);
+      return `<tr class="${worst.has(h.hole_num)?'tough-row':''}"><td><strong>${h.hole_num}</strong></td><td>${h.par}</td><td>${h.plays}</td><td>${h.avg_score}</td><td class="${vp>0?'over':vp<0?'under':''}">${vsFmt(h.avg_vs_par)}</td><td class="num">${h.birdies}</td><td class="num">${h.pars}</td><td class="num">${h.bogeys}</td><td class="num">${h.doubles_plus}</td></tr>`;
     }).join('')+'</tbody></table>';
 }
 
