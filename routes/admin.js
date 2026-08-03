@@ -266,4 +266,43 @@ router.get('/teams/:id', async (req, res) => {
 });
 
 
+
+// PUT /api/admin/rounds/:id/holes — full hole-by-hole edit; upserts holes then
+// recomputes entered_score/status (reconcile) and writes the recomputed summary.
+router.put('/rounds/:id/holes', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const holes = Array.isArray(req.body.holes) ? req.body.holes : [];
+    const summary = (req.body.summary && typeof req.body.summary === 'object') ? req.body.summary : null;
+    const { rows: chk } = await pool.query('SELECT id FROM rounds WHERE id=$1', [id]);
+    if (!chk.length) return res.status(404).json({ error: 'Round not found' });
+    const iv = v => (v === '' || v == null || isNaN(parseInt(v))) ? null : parseInt(v);
+    const fv = v => (v === '' || v == null || isNaN(parseFloat(v))) ? null : parseFloat(v);
+    const bv = v => v === true || v === 'Y' || v === 'true';
+    const sv = v => (v === '' || v == null) ? null : String(v).slice(0, 10);
+    await reconcile.withTx(async (client) => {
+      for (const h of holes) {
+        const hn = parseInt(h.hole_num);
+        if (!hn || hn < 1 || hn > 36) continue;
+        await client.query(
+          `INSERT INTO round_holes
+             (round_id, hole_num, par, hcp, score, fw, gir, miss_dir, drive_dist, prox, putts, first_putt, three_putt, ud_att, ud_made, ss_att, ss_made, pen_strokes, notes, score_source)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'manual')
+           ON CONFLICT (round_id, hole_num) DO UPDATE SET
+             par=$3, hcp=$4, score=$5, fw=$6, gir=$7, miss_dir=$8, drive_dist=$9, prox=$10,
+             putts=$11, first_putt=$12, three_putt=$13, ud_att=$14, ud_made=$15, ss_att=$16,
+             ss_made=$17, pen_strokes=$18, notes=$19, score_source='manual'`,
+          [id, hn, iv(h.par) || 4, iv(h.hcp), iv(h.score), sv(h.fw), sv(h.gir), sv(h.miss_dir),
+           iv(h.drive_dist), fv(h.prox), iv(h.putts), fv(h.first_putt), bv(h.three_putt),
+           bv(h.ud_att), bv(h.ud_made), bv(h.ss_att), bv(h.ss_made), iv(h.pen_strokes) || 0, h.notes || null]
+        );
+      }
+      if (summary) await client.query('UPDATE rounds SET summary=$1 WHERE id=$2', [JSON.stringify(summary), id]);
+      await reconcile.recomputeStatus(client, id);
+    });
+    const { rows: after } = await pool.query('SELECT status, entered_score FROM rounds WHERE id=$1', [id]);
+    res.json({ ok: true, status: after[0] && after[0].status, entered_score: after[0] && after[0].entered_score });
+  } catch (err) { await logError('admin/rounds:holes', err); res.status(500).json({ error: 'Failed to save holes' }); }
+});
+
 module.exports = router;

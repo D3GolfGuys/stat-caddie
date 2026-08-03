@@ -5,7 +5,7 @@ const { logError } = require('../services/errorLog');
 const requireAuth = require('../middleware/requireAuth');
 const requireSubscription = require('../middleware/requireSubscription');
 
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'mdeckert24@gmail.com').toLowerCase();
+const { isAdminEmail } = require('../services/admins');
 
 router.use(requireAuth, requireSubscription);
 
@@ -14,7 +14,7 @@ router.use(requireAuth, requireSubscription);
 // to pull every player's rounds (Beta: lets the founder view all reports).
 router.get('/', async (req, res) => {
   const { limit = 50, offset = 0, status, all } = req.query;
-  const isAdmin = (req.user.email || '').toLowerCase() === ADMIN_EMAIL;
+  const isAdmin = isAdminEmail(req.user.email);
   const viewAll = isAdmin && (all === '1' || all === 'true');
 
   const params = [];

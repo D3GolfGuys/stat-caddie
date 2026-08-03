@@ -122,8 +122,8 @@ router.post('/logout', (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
-  const adminEmail = (process.env.ADMIN_EMAIL || 'mdeckert24@gmail.com').toLowerCase();
-  const isAdmin = (req.user.email || '').toLowerCase() === adminEmail;
+  const { isAdminEmail } = require('../services/admins');
+  const isAdmin = isAdminEmail(req.user.email);
   res.json({ user: { ...req.user, isAdmin } });
 });
 

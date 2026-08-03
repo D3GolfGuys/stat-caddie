@@ -50,6 +50,10 @@
   .fld-row { display:flex; gap:10px; } .fld-row .fld { flex:1; }
   .link-btn { background:none; border:none; color:var(--green-mid); font-weight:600; cursor:pointer; font-size:12px; padding:2px 6px; }
   .link-btn.danger { color:var(--red); }
+  .hole-grid th { padding:6px 5px; font-size:9px; white-space:nowrap; text-align:center; }
+  .hole-grid td { padding:3px 4px; text-align:center; }
+  .hole-grid input[type=number]{ width:50px; padding:5px 3px; border:1px solid var(--border); border-radius:6px; font-size:13px; text-align:center; }
+  .hole-grid select{ padding:5px 2px; border:1px solid var(--border); border-radius:6px; font-size:12px; }
 </style>
 </head>
 <body>
@@ -210,9 +214,28 @@
           <div id="rm-msg" style="font-size:12px;margin:6px 0;"></div>
           <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:8px;">
             <button class="link-btn danger" onclick="deleteRoundFromModal()">Delete round</button>
+            <button class="link-btn" onclick="openHolesFromModal()">Edit holes →</button>
             <div style="display:flex;gap:8px;">
               <button class="btn btn-outline btn-sm" onclick="closeRoundModal()">Cancel</button>
               <button class="btn btn-primary btn-sm" onclick="saveRound()">Save</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-backdrop" id="holes-modal">
+        <div class="modal" style="width:960px;max-width:100%;">
+          <h3>Edit holes <span id="hm-id" style="color:var(--muted);font-weight:500;"></span></h3>
+          <div id="hm-owner" style="font-size:12px;color:var(--muted);margin:-8px 0 8px;"></div>
+          <div id="hm-totals" style="font-size:13px;font-weight:700;color:var(--green-dark);margin-bottom:10px;"></div>
+          <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;">
+            <table class="app-table hole-grid" id="hm-grid"><thead><tr>
+              <th>#</th><th>Par</th><th>Score</th><th>FW</th><th>GIR</th><th>Drive</th><th>Prox</th><th>Putts</th><th>3P</th><th>U/D&nbsp;A</th><th>U/D&nbsp;M</th><th>S/S&nbsp;A</th><th>S/S&nbsp;M</th><th>Pen</th>
+            </tr></thead><tbody id="hm-body"></tbody></table>
+          </div>
+          <div id="hm-msg" style="font-size:12px;margin:8px 0;"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+            <button class="btn btn-outline btn-sm" onclick="closeHoles()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveHoles()">Save holes &amp; recompute</button>
           </div>
         </div>
       </div>
@@ -222,6 +245,7 @@
 </div>
 
 <script src="/js/api.js"></script>
+<script src="/js/roundSummary.js"></script>
 <script src="/js/appshell.js"></script>
 <script>
 const esc = s => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
@@ -405,7 +429,7 @@ async function loadAlerts(){
     + grp('Broken round data','🧩',d.broken,r=>`<tr>
       <td style="text-align:left;"><strong>${aEsc(r.player)}</strong><div class="muted-cell" style="font-size:11px;">${aEsc(r.tournament||'')} · ${aDate(r.round_date)}</div></td>
       <td>no summary — won't render (${aEsc(r.status)})</td>
-      <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="openRound(${r.id})">Edit</button><button class="link-btn danger" onclick="deleteRound(${r.id})">Delete</button></td></tr>`)
+      <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="openRound(${r.id})">Edit</button><button class="link-btn" onclick="openHoles(${r.id})">Holes</button><button class="link-btn danger" onclick="deleteRound(${r.id})">Delete</button></td></tr>`)
     + grp('Billing & roster','💳',[].concat((d.billing||[]).map(b=>({t:0,x:b})),(d.overCap||[]).map(o=>({t:1,x:o}))),row=>row.t===0
         ? `<tr><td style="text-align:left;"><strong>${aEsc(row.x.name)}</strong> <span class="muted-cell" style="font-size:11px;">${aEsc(row.x.email)}</span></td><td>${aEsc(row.x.role)} · subscription ${aEsc(row.x.subscription_status)}</td><td></td></tr>`
         : `<tr><td style="text-align:left;"><strong>${aEsc(row.x.name)}</strong></td><td>over seat cap: ${row.x.players}/${row.x.max_members}</td><td></td></tr>`)
@@ -432,7 +456,7 @@ async function loadRounds(){
     <td>${aDate(r.round_date)}</td><td style="text-align:left;">${aEsc(r.course_name||'—')}</td>
     <td><span class="st ${aEsc(r.status||'')}">${aEsc(r.status||'—')}</span>${r.has_summary?'':' <span class="muted-cell" title="no summary">•</span>'}</td>
     <td>${r.official_score??r.entered_score??'—'}</td>
-    <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="openRound(${r.id})">Edit</button><button class="link-btn danger" onclick="deleteRound(${r.id})">Delete</button></td></tr>`).join('');
+    <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="openRound(${r.id})">Edit</button><button class="link-btn" onclick="openHoles(${r.id})">Holes</button><button class="link-btn danger" onclick="deleteRound(${r.id})">Delete</button></td></tr>`).join('');
 }
 
 let _editingRound=null;
@@ -505,6 +529,74 @@ async function viewTeam(id){
   document.getElementById('teams-list').style.display='none'; box.style.display='';
 }
 function backToTeams(){ const b=document.getElementById('team-detail'); if(b){ b.style.display='none'; } const l=document.getElementById('teams-list'); if(l) l.style.display=''; }
+
+
+// ── Hole-by-hole editor (Phase 2) ──
+let _holesRound=null, _holesData={}, _holesN=18;
+async function openHoles(id){
+  let d; try{ const r=await API.get(`/api/admin/rounds/${id}`); d=r&&r.ok?await r.json():null; }catch{ d=null; }
+  if(!d){ alert('Could not load round.'); return; }
+  _holesRound=id; _holesData={}; (d.holes||[]).forEach(h=>{ _holesData[h.hole_num]=h; });
+  const maxHole=(d.holes||[]).reduce((m,h)=>Math.max(m,h.hole_num||0),0);
+  _holesN=Math.max(18, maxHole);
+  document.getElementById('hm-id').textContent='#'+id;
+  document.getElementById('hm-owner').textContent=(d.player||'')+' · '+(d.tournament||'—')+' · '+(d.course_name||'');
+  renderHoleGrid(); document.getElementById('hm-msg').textContent='';
+  document.getElementById('holes-modal').classList.add('show');
+}
+function closeHoles(){ document.getElementById('holes-modal').classList.remove('show'); _holesRound=null; }
+function fwOpts(v){ return ['','H','L','R'].map(o=>`<option value="${o}" ${v===o?'selected':''}>${o||'—'}</option>`).join(''); }
+function girOpts(v){ return ['','Y','N'].map(o=>`<option value="${o}" ${v===o?'selected':''}>${o||'—'}</option>`).join(''); }
+function renderHoleGrid(){
+  const b=document.getElementById('hm-body'); const nv=v=>(v==null?'':v);
+  const ck=v=>(v===true||v==='Y'||v==='true')?'checked':''; let rows='';
+  for(let h=1;h<=_holesN;h++){ const d=_holesData[h]||{};
+    rows+=`<tr data-h="${h}">
+      <td><strong>${h}</strong></td>
+      <td><input type="number" data-f="par" value="${nv(d.par)}" oninput="recalcHoles()"></td>
+      <td><input type="number" data-f="score" value="${nv(d.score)}" oninput="recalcHoles()"></td>
+      <td><select data-f="fw">${fwOpts(d.fw||'')}</select></td>
+      <td><select data-f="gir">${girOpts(d.gir||'')}</select></td>
+      <td><input type="number" data-f="drive_dist" value="${nv(d.drive_dist)}"></td>
+      <td><input type="number" step="0.1" data-f="prox" value="${nv(d.prox)}"></td>
+      <td><input type="number" data-f="putts" value="${nv(d.putts)}"></td>
+      <td><input type="checkbox" data-f="three_putt" ${ck(d.three_putt)}></td>
+      <td><input type="checkbox" data-f="ud_att" ${ck(d.ud_att)}></td>
+      <td><input type="checkbox" data-f="ud_made" ${ck(d.ud_made)}></td>
+      <td><input type="checkbox" data-f="ss_att" ${ck(d.ss_att)}></td>
+      <td><input type="checkbox" data-f="ss_made" ${ck(d.ss_made)}></td>
+      <td><input type="number" data-f="pen_strokes" value="${nv(d.pen_strokes)}"></td></tr>`;
+  }
+  b.innerHTML=rows; recalcHoles();
+}
+function gatherHoles(){
+  const out=[];
+  document.querySelectorAll('#hm-body tr').forEach(tr=>{
+    const h=parseInt(tr.dataset.h); const carried=_holesData[h]||{};
+    const g=f=>{ const el=tr.querySelector(`[data-f="${f}"]`); if(!el) return null; return el.type==='checkbox'?el.checked:el.value; };
+    out.push({ hole_num:h, par:g('par'), score:g('score'), fw:g('fw'), gir:g('gir'),
+      drive_dist:g('drive_dist'), prox:g('prox'), putts:g('putts'), three_putt:g('three_putt'),
+      ud_att:g('ud_att'), ud_made:g('ud_made'), ss_att:g('ss_att'), ss_made:g('ss_made'),
+      pen_strokes:g('pen_strokes'), hcp:carried.hcp, miss_dir:carried.miss_dir, first_putt:carried.first_putt, notes:carried.notes });
+  });
+  return out;
+}
+function recalcHoles(){
+  if(!window.computeRoundSummary) return;
+  const su=window.computeRoundSummary(gatherHoles()); const vs=su.vspar;
+  const el=document.getElementById('hm-totals');
+  if(el) el.textContent='Score '+(su.totalScore||0)+' · Par '+(su.totalPar||0)+' · vs par '+(vs>0?'+'+vs:vs)+' · '+su.holesPlayed+' holes scored';
+}
+async function saveHoles(){
+  if(!_holesRound) return;
+  const holes=gatherHoles();
+  const summary=window.computeRoundSummary?window.computeRoundSummary(holes):null;
+  const msg=document.getElementById('hm-msg'); msg.style.color='var(--muted)'; msg.textContent='Saving…';
+  const r=await API.put(`/api/admin/rounds/${_holesRound}/holes`,{holes,summary}); const d=r?await r.json():{};
+  if(r&&r.ok){ msg.style.color='var(--green-mid)'; msg.textContent='Saved — status: '+(d.status||'updated')+'.'; setTimeout(()=>{ closeHoles(); loadRounds(); loadAlerts(); },800); }
+  else { msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Save failed.'; }
+}
+function openHolesFromModal(){ const id=_editingRound; closeRoundModal(); if(id) openHoles(id); }
 
 loadAlerts(); // populate the Alerts tab badge on load
 </script>
