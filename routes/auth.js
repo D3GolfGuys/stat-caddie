@@ -23,7 +23,7 @@ function issueToken(userId, res) {
 // Accepts the new `accountType` ('individual' | 'coach') and `teamName`, and
 // still honors the legacy `plan==='team'` selection so older clients keep working.
 router.post('/register', async (req, res) => {
-  const { email, password, name, plan, accountType, teamName, division, schoolName, conference } = req.body;
+  const { email, password, name, plan, accountType, teamName, division, schoolName, conference, gender } = req.body;
   if (!email || !password || !name) return res.status(400).json({ error: 'Email, password and name are required' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
@@ -50,10 +50,10 @@ router.post('/register', async (req, res) => {
       const user = userRows[0];
       const schoolId = await findOrCreateSchool(client, { name: schoolName || resolvedTeamName, division, conference });
       const { rows: teamRows } = await client.query(
-        `INSERT INTO teams (name, admin_user_id, subscription_status, max_members, division, conference, school_id, school_name)
-         VALUES ($1, $2, $3, 15, $4, $5, $6, $7)
+        `INSERT INTO teams (name, admin_user_id, subscription_status, max_members, division, conference, school_id, school_name, gender)
+         VALUES ($1, $2, $3, 15, $4, $5, $6, $7, $8)
          RETURNING id, name, max_members, division`,
-        [resolvedTeamName, user.id, betaMode ? 'active' : 'inactive', division || null, conference || null, schoolId, schoolName || null]
+        [resolvedTeamName, user.id, betaMode ? 'active' : 'inactive', division || null, conference || null, schoolId, schoolName || null, gender || null]
       );
       const team = teamRows[0];
       await client.query('UPDATE users SET team_id = $1 WHERE id = $2', [team.id, user.id]);

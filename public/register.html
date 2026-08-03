@@ -63,6 +63,14 @@
           <option value="NJCAA">NJCAA</option>
         </select>
       </div>
+      <div class="form-group" id="gender-group">
+        <label for="gender">Team</label>
+        <select id="gender" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--green-dark);">
+          <option value="" disabled selected>Men's or Women's…</option>
+          <option value="M">Men's</option>
+          <option value="W">Women's</option>
+        </select>
+      </div>
       <div class="form-group" id="school-group">
         <label for="school">School / Program</label>
         <input type="text" id="school" placeholder="e.g. Lincoln College" autocomplete="organization">
@@ -146,6 +154,7 @@
     const isCoach = selectedType === 'coach';
     const teamName = document.getElementById('teamName').value.trim();
     const division = document.getElementById('division').value;
+    const gender = document.getElementById('gender').value;
     const schoolName = document.getElementById('school').value.trim();
     const conference = document.getElementById('conference').value.trim();
     if (isCoach && !teamName) {
@@ -154,6 +163,10 @@
     }
     if (isCoach && !division) {
       errEl.textContent = 'Please select your division.'; errEl.style.display = 'block';
+      return;
+    }
+    if (isCoach && !gender) {
+      errEl.textContent = "Please select Men's or Women's."; errEl.style.display = 'block';
       return;
     }
     // Coaches subscribe on the team plan; individuals on the individual plan.
@@ -173,6 +186,7 @@
           accountType: selectedType,
           teamName: isCoach ? teamName : undefined,
           division: isCoach ? division : undefined,
+          gender: isCoach ? gender : undefined,
           schoolName: isCoach ? (schoolName || teamName) : undefined,
           conference: isCoach ? (conference || undefined) : undefined,
           plan,

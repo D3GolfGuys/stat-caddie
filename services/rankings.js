@@ -25,7 +25,7 @@ async function getCurrentSeasonId(db) {
 // One canonical player per app user with rounds; segment from their team.
 async function provisionPlayers(db, seasonId) {
   const { rows: users } = await db.query(`
-    SELECT DISTINCT u.id AS user_id, u.name, t.division, t.conference, t.region
+    SELECT DISTINCT u.id AS user_id, u.name, t.division, t.conference, t.region, t.gender
       FROM users u
       JOIN rounds r ON r.user_id = u.id
       LEFT JOIN teams t ON t.id = u.team_id`);
@@ -33,19 +33,23 @@ async function provisionPlayers(db, seasonId) {
   for (const u of users) {
     let playerId;
     const ins = await db.query(`
-      INSERT INTO college_players (full_name, user_id)
-      SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM college_players WHERE user_id = $2)
-      RETURNING id`, [u.name || 'Player', u.user_id]);
+      INSERT INTO college_players (full_name, user_id, gender)
+      SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM college_players WHERE user_id = $2)
+      RETURNING id`, [u.name || 'Player', u.user_id, u.gender || null]);
     if (ins.rows.length) playerId = ins.rows[0].id;
-    else playerId = (await db.query(`SELECT id FROM college_players WHERE user_id = $1`, [u.user_id])).rows[0].id;
+    else {
+      playerId = (await db.query(`SELECT id FROM college_players WHERE user_id = $1`, [u.user_id])).rows[0].id;
+      await db.query(`UPDATE college_players SET gender = COALESCE($2, gender) WHERE id = $1`, [playerId, u.gender || null]);
+    }
     await db.query(`
-      INSERT INTO player_seasons (player_id, season_id, division, conference, region)
-      VALUES ($1,$2,$3,$4,$5)
+      INSERT INTO player_seasons (player_id, season_id, division, conference, region, gender)
+      VALUES ($1,$2,$3,$4,$5,$6)
       ON CONFLICT (player_id, season_id) DO UPDATE SET
         division   = COALESCE(EXCLUDED.division, player_seasons.division),
         conference = COALESCE(EXCLUDED.conference, player_seasons.conference),
-        region     = COALESCE(EXCLUDED.region, player_seasons.region)`,
-      [playerId, seasonId, u.division || null, u.conference || null, u.region || null]);
+        region     = COALESCE(EXCLUDED.region, player_seasons.region),
+        gender     = COALESCE(EXCLUDED.gender, player_seasons.gender)`,
+      [playerId, seasonId, u.division || null, u.conference || null, u.region || null, u.gender || null]);
     map[u.user_id] = playerId;
   }
   return map;
@@ -92,21 +96,21 @@ async function computeRankings(db, seasonId) {
   let inserted = 0;
   for (const seg of SEGMENTS) {
     const res = await db.query(`
-      INSERT INTO rankings (metric_id, season_id, segment_type, segment_value, player_id, value, rank, percentile, sample_n, cohort_n, computed_at)
-      SELECT metric_id, season_id, $2, seg, player_id, value, rnk,
+      INSERT INTO rankings (metric_id, season_id, segment_type, segment_value, gender, player_id, value, rank, percentile, sample_n, cohort_n, computed_at)
+      SELECT metric_id, season_id, $2, seg, gender, player_id, value, rnk,
              CASE WHEN cohort_n > 1 THEN ROUND(100.0 * (cohort_n - rnk) / (cohort_n - 1), 2) ELSE 100 END,
              sample_n, cohort_n, NOW()
       FROM (
-        SELECT pms.metric_id, pms.season_id, ${seg.expr} AS seg, pms.player_id, pms.value, pms.sample_n,
+        SELECT pms.metric_id, pms.season_id, ${seg.expr} AS seg, ps.gender AS gender, pms.player_id, pms.value, pms.sample_n,
                RANK() OVER w AS rnk,
-               COUNT(*) OVER (PARTITION BY pms.metric_id, ${seg.expr}) AS cohort_n
+               COUNT(*) OVER (PARTITION BY pms.metric_id, ${seg.expr}, ps.gender) AS cohort_n
         FROM player_metric_season pms
         JOIN metrics m ON m.id = pms.metric_id
         JOIN player_seasons ps ON ps.player_id = pms.player_id AND ps.season_id = pms.season_id
         WHERE pms.season_id = $1 AND m.rankable AND pms.value IS NOT NULL
-          AND pms.sample_n >= m.min_sample AND ${seg.expr} IS NOT NULL
+          AND pms.sample_n >= m.min_sample AND ${seg.expr} IS NOT NULL AND ps.gender IS NOT NULL
         WINDOW w AS (
-          PARTITION BY pms.metric_id, ${seg.expr}
+          PARTITION BY pms.metric_id, ${seg.expr}, ps.gender
           ORDER BY pms.value * (CASE WHEN m.direction = 'lower' THEN 1 ELSE -1 END) ASC
         )
       ) x`, [seasonId, seg.type]);
@@ -130,7 +134,7 @@ async function recompute(pool, opts = {}) {
 async function getPlayerRankings(db, userId, seasonId) {
   return (await db.query(`
     SELECT m.key, m.display_name, m.category, m.unit, m.decimals, m.direction,
-           r.segment_type, r.segment_value, r.value, r.rank, r.percentile, r.cohort_n
+           r.gender, r.segment_type, r.segment_value, r.value, r.rank, r.percentile, r.cohort_n
       FROM rankings r
       JOIN metrics m ON m.id = r.metric_id
       JOIN college_players cp ON cp.id = r.player_id
@@ -138,19 +142,19 @@ async function getPlayerRankings(db, userId, seasonId) {
      ORDER BY m.sort_order ASC, r.segment_type ASC`, [userId, seasonId])).rows;
 }
 
-async function getLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', limit = 25 } = {}) {
+async function getLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', gender = 'M', limit = 25 } = {}) {
   const seasonId = await getCurrentSeasonId(db);
   if (!seasonId || !metricKey) return [];
   return (await db.query(`
-    SELECT cp.full_name AS player, ps.division, ps.conference,
+    SELECT cp.full_name AS player, ps.division, ps.conference, r.gender,
            r.value, r.rank, r.percentile, r.cohort_n
       FROM rankings r
       JOIN metrics m ON m.id = r.metric_id
       JOIN college_players cp ON cp.id = r.player_id
       LEFT JOIN player_seasons ps ON ps.player_id = r.player_id AND ps.season_id = r.season_id
-     WHERE m.key = $1 AND r.segment_type = $2 AND r.segment_value = $3 AND r.season_id = $4
-     ORDER BY r.rank ASC LIMIT $5`,
-    [metricKey, segmentType, segmentValue, seasonId, Math.min(Number(limit) || 25, 100)])).rows;
+     WHERE m.key = $1 AND r.segment_type = $2 AND r.segment_value = $3 AND r.gender = $4 AND r.season_id = $5
+     ORDER BY r.rank ASC LIMIT $6`,
+    [metricKey, segmentType, segmentValue, gender, seasonId, Math.min(Number(limit) || 25, 100)])).rows;
 }
 
 const TEAM_SEGMENTS = [
@@ -198,21 +202,21 @@ async function computeTeamRankings(db, seasonId) {
   let inserted = 0;
   for (const seg of TEAM_SEGMENTS) {
     const res = await db.query(`
-      INSERT INTO team_rankings (metric_id, season_id, segment_type, segment_value, team_id, value, rank, percentile, sample_n, cohort_n, computed_at)
-      SELECT metric_id, season_id, $2, seg, team_id, value, rnk,
+      INSERT INTO team_rankings (metric_id, season_id, segment_type, segment_value, gender, team_id, value, rank, percentile, sample_n, cohort_n, computed_at)
+      SELECT metric_id, season_id, $2, seg, gender, team_id, value, rnk,
              CASE WHEN cohort_n > 1 THEN ROUND(100.0 * (cohort_n - rnk) / (cohort_n - 1), 2) ELSE 100 END,
              sample_n, cohort_n, NOW()
       FROM (
-        SELECT tms.metric_id, tms.season_id, ${seg.expr} AS seg, tms.team_id, tms.value, tms.sample_n,
+        SELECT tms.metric_id, tms.season_id, ${seg.expr} AS seg, t.gender AS gender, tms.team_id, tms.value, tms.sample_n,
                RANK() OVER w AS rnk,
-               COUNT(*) OVER (PARTITION BY tms.metric_id, ${seg.expr}) AS cohort_n
+               COUNT(*) OVER (PARTITION BY tms.metric_id, ${seg.expr}, t.gender) AS cohort_n
         FROM team_metric_season tms
         JOIN metrics m ON m.id = tms.metric_id
         JOIN teams t ON t.id = tms.team_id
         WHERE tms.season_id = $1 AND m.rankable AND tms.value IS NOT NULL
-          AND tms.sample_n >= m.min_sample AND ${seg.expr} IS NOT NULL
+          AND tms.sample_n >= m.min_sample AND ${seg.expr} IS NOT NULL AND t.gender IS NOT NULL
         WINDOW w AS (
-          PARTITION BY tms.metric_id, ${seg.expr}
+          PARTITION BY tms.metric_id, ${seg.expr}, t.gender
           ORDER BY tms.value * (CASE WHEN m.direction = 'lower' THEN 1 ELSE -1 END) ASC
         )
       ) x`, [seasonId, seg.type]);
@@ -221,24 +225,24 @@ async function computeTeamRankings(db, seasonId) {
   return { inserted };
 }
 
-async function getTeamLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', limit = 25 } = {}) {
+async function getTeamLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', gender = 'M', limit = 25 } = {}) {
   const seasonId = await getCurrentSeasonId(db);
   if (!seasonId || !metricKey) return [];
   return (await db.query(`
-    SELECT t.name AS team, t.division, t.conference,
+    SELECT t.name AS team, t.division, t.conference, tr.gender,
            tr.value, tr.rank, tr.percentile, tr.cohort_n
       FROM team_rankings tr
       JOIN metrics m ON m.id = tr.metric_id
       JOIN teams t ON t.id = tr.team_id
-     WHERE m.key = $1 AND tr.segment_type = $2 AND tr.segment_value = $3 AND tr.season_id = $4
-     ORDER BY tr.rank ASC LIMIT $5`,
-    [metricKey, segmentType, segmentValue, seasonId, Math.min(Number(limit) || 25, 100)])).rows;
+     WHERE m.key = $1 AND tr.segment_type = $2 AND tr.segment_value = $3 AND tr.gender = $4 AND tr.season_id = $5
+     ORDER BY tr.rank ASC LIMIT $6`,
+    [metricKey, segmentType, segmentValue, gender, seasonId, Math.min(Number(limit) || 25, 100)])).rows;
 }
 
 async function getTeamRankings(db, teamId, seasonId) {
   return (await db.query(`
     SELECT m.key, m.display_name, m.category, m.unit, m.decimals, m.direction,
-           tr.segment_type, tr.segment_value, tr.value, tr.rank, tr.percentile, tr.cohort_n
+           tr.gender, tr.segment_type, tr.segment_value, tr.value, tr.rank, tr.percentile, tr.cohort_n
       FROM team_rankings tr
       JOIN metrics m ON m.id = tr.metric_id
      WHERE tr.team_id = $1 AND tr.season_id = $2

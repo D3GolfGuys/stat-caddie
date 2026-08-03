@@ -296,7 +296,8 @@ const schema = `
     metric_id INTEGER REFERENCES metrics(id) ON DELETE CASCADE NOT NULL,
     season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
     segment_type VARCHAR(16) NOT NULL,        -- national | division | conference | region | gender | class_year
-    segment_value VARCHAR(255) NOT NULL,      -- 'ALL' | 'D3' | conference | 'M' | ...
+    segment_value VARCHAR(255) NOT NULL,      -- 'ALL' | 'D3' | conference | ...
+    gender VARCHAR(12),                        -- 'M' | 'W' — rankings are gender-split
     player_id INTEGER REFERENCES college_players(id) ON DELETE CASCADE NOT NULL,
     value DECIMAL(10,3),
     rank INTEGER,
@@ -304,9 +305,9 @@ const schema = `
     sample_n INTEGER,                         -- the player's own sample
     cohort_n INTEGER,                         -- players in this ranked cohort
     computed_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(metric_id, season_id, segment_type, segment_value, player_id)
+    UNIQUE(metric_id, season_id, segment_type, segment_value, gender, player_id)
   );
-  CREATE INDEX IF NOT EXISTS idx_rankings_lookup ON rankings(metric_id, season_id, segment_type, segment_value, rank);
+  CREATE INDEX IF NOT EXISTS idx_rankings_lookup ON rankings(metric_id, season_id, segment_type, segment_value, gender, rank);
   CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id, season_id);
 
   -- ===================================================================
@@ -349,6 +350,7 @@ const schema = `
   ALTER TABLE teams ADD COLUMN IF NOT EXISTS region      VARCHAR(64);
   ALTER TABLE teams ADD COLUMN IF NOT EXISTS school_id   INTEGER REFERENCES schools(id) ON DELETE SET NULL;
   ALTER TABLE teams ADD COLUMN IF NOT EXISTS school_name VARCHAR(255);
+  ALTER TABLE teams ADD COLUMN IF NOT EXISTS gender      VARCHAR(12);
   CREATE INDEX IF NOT EXISTS idx_teams_division ON teams(division);
 
   -- ===================================================================
@@ -378,6 +380,7 @@ const schema = `
     season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE NOT NULL,
     segment_type VARCHAR(16) NOT NULL,
     segment_value VARCHAR(255) NOT NULL,
+    gender VARCHAR(12),
     team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE NOT NULL,
     value DECIMAL(10,3),
     rank INTEGER,
@@ -385,9 +388,9 @@ const schema = `
     sample_n INTEGER,
     cohort_n INTEGER,
     computed_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(metric_id, season_id, segment_type, segment_value, team_id)
+    UNIQUE(metric_id, season_id, segment_type, segment_value, gender, team_id)
   );
-  CREATE INDEX IF NOT EXISTS idx_team_rankings_lookup ON team_rankings(metric_id, season_id, segment_type, segment_value, rank);
+  CREATE INDEX IF NOT EXISTS idx_team_rankings_lookup ON team_rankings(metric_id, season_id, segment_type, segment_value, gender, rank);
   CREATE INDEX IF NOT EXISTS idx_team_rankings_team ON team_rankings(team_id, season_id);
 `;
 

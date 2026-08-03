@@ -9,6 +9,7 @@
 // identically to real ones on the dashboard.
 
 const bcrypt = require('bcryptjs');
+const { findOrCreateSchool } = require('./schools');
 
 const DEMO_DOMAIN = 'demo.statcaddie';
 
@@ -48,6 +49,37 @@ const TEAM_PLAYERS = [
   { name: 'Cameron Lee',   email: `cameron@${DEMO_DOMAIN}`,
     parBias: 0.90,  parJitter: 1.30, fwProb: 0.48, girProb: 0.40, driveBase: 265, putts1Prob: 0.26, scramProb: 0.40, sandProb: 0.30, penProb: 0.14 },
 ];
+
+// ── Demo LEAGUE ────────────────────────────────────────────────────────────
+// A whole league across divisions so the leaderboards + team rankings show real
+// spread. Every user is under DEMO_DOMAIN so clearDemo() sweeps it; each demo
+// team name ends in " (demo)".
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function playerProfile(name, email, skill) {
+  return { name, email,
+    parBias: skill, parJitter: 0.85 + Math.max(0, skill) * 0.3,
+    fwProb:  clamp(0.72 - skill * 0.15, 0.42, 0.75),
+    girProb: clamp(0.68 - skill * 0.17, 0.36, 0.70),
+    driveBase: Math.round(300 - skill * 32),
+    putts1Prob: clamp(0.46 - skill * 0.11, 0.24, 0.48),
+    scramProb: clamp(0.64 - skill * 0.15, 0.36, 0.66),
+    sandProb:  clamp(0.55 - skill * 0.13, 0.28, 0.56),
+    penProb:   clamp(0.04 + Math.max(0, skill) * 0.07, 0.03, 0.16),
+  };
+}
+const LEAGUE = [
+  { school: 'Stanford',        division: 'D1',   conference: 'ACC',    gender: 'M', base: -0.10 },
+  { school: 'Vanderbilt',      division: 'D1',   conference: 'SEC',    gender: 'W', base: -0.08 },
+  { school: 'Emory',           division: 'D3',   conference: 'UAA',    gender: 'M', base: -0.06 },
+  { school: 'Lynn',            division: 'D2',   conference: 'SSC',    gender: 'M', base: -0.05 },
+  { school: 'Williams',        division: 'D3',   conference: 'NESCAC', gender: 'M', base: -0.03 },
+  { school: 'Keiser',          division: 'NAIA', conference: 'Sun',    gender: 'W', base: -0.02 },
+  { school: 'Lincoln College', division: 'D3',   conference: 'SCAC',   gender: 'W', base:  0.00 },
+  { school: 'Rockford',        division: 'D3',   conference: 'NACC',   gender: 'W', base:  0.02 },
+];
+const FIRST = ['Jordan','Sam','Taylor','Drew','Cameron','Alex','Riley','Casey','Morgan','Quinn','Avery','Reese','Parker','Hayden','Emerson','Rowan','Skylar','Micah','Devin','Elliot'];
+const LAST  = ['Miles','Rivera','Quinn','Parker','Lee','Brooks','Hayes','Nguyen','Patel','Sato','Kim','Diaz','Foster','Reed','Cole','Grant','Shaw','Boone','Vance','Pierce'];
+
 
 // Standard par-72 layout (four 3s, four 5s, ten 4s).
 const PAR_LAYOUT = [4, 5, 4, 3, 4, 4, 5, 3, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4];
@@ -380,6 +412,71 @@ async function seedTeam(pool) {
   }
 }
 
+// Seed (or re-seed) a demo LEAGUE: 8 programs across divisions, coach + 5
+// players each with statted rounds, divisions set. Idempotent on email; caller
+// should recompute rankings afterward. Everything is under DEMO_DOMAIN.
+async function seedLeague(pool) {
+  const client = await pool.connect();
+  const result = { teams: 0, players: 0, rounds: 0, programs: [] };
+  try {
+    await client.query('BEGIN');
+    const password_hash = await bcrypt.hash('demo1234', 12);
+    for (let t = 0; t < LEAGUE.length; t++) {
+      const prog = LEAGUE[t];
+      const { rows: cRows } = await client.query(
+        `INSERT INTO users (email,password_hash,name,role,subscription_status,subscription_plan)
+         VALUES ($1,$2,$3,'team_admin','active','team')
+         ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role='team_admin', subscription_status='active', subscription_plan='team'
+         RETURNING id`,
+        [`coach_t${t}@${DEMO_DOMAIN}`, password_hash, `Coach ${prog.school}`]);
+      const coachId = cRows[0].id;
+      const schoolId = await findOrCreateSchool(client, { name: prog.school, division: prog.division, conference: prog.conference });
+      const teamName = `${prog.school} ${prog.gender === 'W' ? 'Women' : 'Men'} (demo)`;
+      let teamId;
+      const { rows: tExist } = await client.query('SELECT id FROM teams WHERE admin_user_id=$1', [coachId]);
+      if (tExist.length) {
+        teamId = tExist[0].id;
+        await client.query(
+          `UPDATE teams SET name=$1, subscription_status='active', max_members=15, division=$2, conference=$3, school_id=$4, school_name=$5, gender=$6 WHERE id=$7`,
+          [teamName, prog.division, prog.conference, schoolId, prog.school, prog.gender, teamId]);
+      } else {
+        const { rows: tRows } = await client.query(
+          `INSERT INTO teams (name,admin_user_id,subscription_status,max_members,division,conference,school_id,school_name,gender)
+           VALUES ($1,$2,'active',15,$3,$4,$5,$6,$7) RETURNING id`,
+          [teamName, coachId, prog.division, prog.conference, schoolId, prog.school, prog.gender]);
+        teamId = tRows[0].id;
+      }
+      await client.query('UPDATE users SET team_id=$1 WHERE id=$2', [teamId, coachId]);
+      for (let i = 0; i < 5; i++) {
+        const skill = prog.base + i * 0.05;
+        const name = `${FIRST[(t * 5 + i) % FIRST.length]} ${LAST[(t * 7 + i) % LAST.length]}`;
+        const email = `t${t}p${i}@${DEMO_DOMAIN}`;
+        const p = playerProfile(name, email, skill);
+        const { rows } = await client.query(
+          `INSERT INTO users (email,password_hash,name,role,team_id,subscription_status,subscription_plan)
+           VALUES ($1,$2,$3,'team_member',$4,'active','team')
+           ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role='team_member', team_id=EXCLUDED.team_id
+           RETURNING id`,
+          [email, password_hash, name, teamId]);
+        const uid = rows[0].id;
+        await client.query('DELETE FROM rounds WHERE user_id=$1', [uid]);
+        const rounds = buildRounds(p, 20000 + t * 1000 + i * 131);
+        for (const r of rounds) await insertRound(client, uid, r);
+        result.players++; result.rounds += rounds.length;
+      }
+      result.teams++;
+      result.programs.push({ school: prog.school, division: prog.division });
+    }
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Remove the demo players (individuals + team) entirely. Rounds + holes cascade
 // via FK; the orphaned demo team row is removed by name afterwards.
 async function clearDemo(pool) {
@@ -387,9 +484,9 @@ async function clearDemo(pool) {
     `DELETE FROM users WHERE email LIKE $1`, [`%@${DEMO_DOMAIN}`]
   );
   const { rowCount: teamsRemoved } = await pool.query(
-    `DELETE FROM teams WHERE name=$1`, [DEMO_TEAM_NAME]
+    `DELETE FROM teams WHERE name=$1 OR name LIKE '% (demo)'`, [DEMO_TEAM_NAME]
   );
   return { removedUsers: rowCount, removedTeams: teamsRemoved };
 }
 
-module.exports = { seedDemo, seedTeam, clearDemo, buildRounds, computeSummary, DEMO_PLAYERS, TEAM_PLAYERS, DEMO_DOMAIN, DEMO_TEAM_NAME, DEMO_COACH };
+module.exports = { seedDemo, seedTeam, seedLeague, clearDemo, buildRounds, computeSummary, playerProfile, DEMO_PLAYERS, TEAM_PLAYERS, LEAGUE, DEMO_DOMAIN, DEMO_TEAM_NAME, DEMO_COACH };

@@ -84,6 +84,13 @@
           <button class="btn btn-primary btn-sm" id="btn-seed-team" onclick="seedTeam()">Seed demo team</button>
           <span id="team-msg" style="font-size:13px;color:var(--muted);"></span>
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+        <p class="page-sub" style="margin:0 0 12px;">Seed a demo <strong>league</strong> — 8 programs across D1/D2/D3/NAIA, 5 players each with statted rounds and divisions set — then recompute. This populates the public leaderboards and team rankings with real spread so you can see them in action.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="btn-seed-league" onclick="seedLeague()">Seed demo league + rank</button>
+          <span id="league-msg" style="font-size:13px;color:var(--muted);"></span>
+        </div>
       </div>
 
       <!-- Rankings -->
@@ -246,6 +253,17 @@ async function recomputeRankings(){
     const d=r?await r.json():{};
     if(r&&r.ok){ msg.style.color='var(--green-mid)'; msg.textContent=`✅ ${d.players} players · ${d.rankingsInserted} rankings (season "${d.seasonLabel}").`; }
     else { msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Failed to recompute.'; }
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error.'; }
+  btn.disabled=false; btn.textContent=old;
+}
+async function seedLeague(){
+  const btn=document.getElementById('btn-seed-league'), msg=document.getElementById('league-msg');
+  const old=btn.textContent; btn.disabled=true; btn.textContent='Seeding + ranking…'; msg.textContent='';
+  try{
+    const r=await API.post('/api/admin/seed-league',{}); const d=r?await r.json():{};
+    if(r&&r.ok){ const rk=(d.ranked.rankingsInserted||0)+(d.ranked.teamRankingsInserted||0);
+      msg.style.color='var(--green-mid)'; msg.textContent=`✅ ${d.seeded.teams} programs · ${d.seeded.players} players · ${d.seeded.rounds} rounds · ${rk} rankings. View /leaderboard.html`; }
+    else { msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Failed to seed league.'; }
   }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error.'; }
   btn.disabled=false; btn.textContent=old;
 }

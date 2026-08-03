@@ -21,11 +21,12 @@ router.get('/me', async (req, res) => {
 
 // PUT /api/teams/me  — update team name + ranking segment (admin only)
 router.put('/me', requireTeamAdmin, async (req, res) => {
-  const { name, division, conference, schoolName } = req.body;
+  const { name, division, conference, schoolName, gender } = req.body;
   const sets = [], params = []; let i = 1;
   if (name != null && String(name).trim()) { sets.push(`name=$${i++}`); params.push(String(name).trim()); }
   if (division !== undefined)   { sets.push(`division=$${i++}`);   params.push(division || null); }
   if (conference !== undefined) { sets.push(`conference=$${i++}`); params.push(conference || null); }
+  if (gender !== undefined)     { sets.push(`gender=$${i++}`);     params.push(gender || null); }
   if (schoolName !== undefined) {
     const schoolId = await findOrCreateSchool(pool, { name: schoolName, division, conference });
     sets.push(`school_id=$${i++}`);   params.push(schoolId);

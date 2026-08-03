@@ -61,7 +61,7 @@
       <div class="sidebar-section">
         <div class="sidebar-label">Team</div>
         <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Dashboard</a>
-        <a href="/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
+        <a href="/app/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Account</div>
@@ -102,6 +102,12 @@
             <option value="D3">NCAA Division III</option>
             <option value="NAIA">NAIA</option>
             <option value="NJCAA">NJCAA</option>
+          </select></div>
+        <div class="form-group"><label>Team</label>
+          <select id="set-gender" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:#fff;">
+            <option value="">Not set</option>
+            <option value="M">Men's</option>
+            <option value="W">Women's</option>
           </select></div>
         <div class="form-group"><label>School / Program</label><input type="text" id="set-school" placeholder="e.g. Lincoln College"></div>
         <div class="form-group"><label>Conference <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="text" id="set-conference" placeholder="e.g. SCAC"></div>
@@ -219,6 +225,7 @@ function openInvite(){ const m=document.getElementById('invite-modal'); m.style.
 function openSettings(){
   document.getElementById('set-name').value=(TEAM&&TEAM.name)||'';
   document.getElementById('set-division').value=(TEAM&&TEAM.division)||'';
+  document.getElementById('set-gender').value=(TEAM&&TEAM.gender)||'';
   document.getElementById('set-school').value=(TEAM&&TEAM.school_name)||'';
   document.getElementById('set-conference').value=(TEAM&&TEAM.conference)||'';
   document.getElementById('settings-modal').style.display='block';
@@ -227,6 +234,7 @@ async function saveSettings(){
   const out=document.getElementById('settings-result');
   const body={ name:document.getElementById('set-name').value.trim(),
     division:document.getElementById('set-division').value,
+    gender:document.getElementById('set-gender').value,
     schoolName:document.getElementById('set-school').value.trim(),
     conference:document.getElementById('set-conference').value.trim() };
   const r=await API.put('/api/teams/me',body); const d=r?await r.json():{};

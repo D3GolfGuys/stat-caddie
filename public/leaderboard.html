@@ -53,6 +53,10 @@
     <button data-scope="player" class="on" onclick="setScope('player')">Players</button>
     <button data-scope="team" onclick="setScope('team')">Teams</button>
   </div>
+  <div class="seg" id="gender-seg" style="margin-left:8px;">
+    <button data-gender="M" class="on" onclick="setGender('M')">Men</button>
+    <button data-gender="W" onclick="setGender('W')">Women</button>
+  </div>
 
   <div class="controls">
     <div class="field"><label for="metric">Statistic</label><select id="metric"></select></div>
@@ -77,11 +81,12 @@
   <div class="note">Rankings are computed only from rounds entered in College Golf Metrics and refresh nightly. A player is ranked once they have enough rounds in a season; team rankings aggregate a program's players. Coverage — and precision — grow as more programs join. Percentile = share of the shown cohort beaten.</div>
 </div>
 <script>
-let METRICS=[], SCOPE='player';
+let METRICS=[], SCOPE='player', GENDER='M';
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 const fval=(v,m)=>{ if(v==null) return '—'; const n=Number(v).toFixed(m.decimals==null?1:m.decimals); return m.unit==='pct'?n+'%':n; };
 function currentMetric(){ const k=document.getElementById('metric').value; return METRICS.find(m=>m.key===k)||{unit:'',decimals:1,display_name:'Value'}; }
 function setScope(sc){ SCOPE=sc; document.querySelectorAll('#scope-seg button').forEach(b=>b.classList.toggle('on', b.dataset.scope===sc)); document.getElementById('name-head').textContent = sc==='team'?'Team':'Player'; load(); }
+function setGender(g){ GENDER=g; document.querySelectorAll('#gender-seg button').forEach(b=>b.classList.toggle('on', b.dataset.gender===g)); load(); }
 async function loadMetrics(){
   try{ const r=await fetch('/api/rankings/metrics'); METRICS=((await r.json()).metrics)||[]; }catch{ METRICS=[]; }
   const sel=document.getElementById('metric'); const byCat={};
@@ -97,13 +102,13 @@ async function load(){
   const body=document.getElementById('lb-body'); body.innerHTML='<tr><td colspan="5" class="empty">Loading…</td></tr>';
   let rows=[];
   try{
-    const url=`/api/rankings/leaderboard?metric=${encodeURIComponent(m.key)}&segment_type=${segType}&segment_value=${encodeURIComponent(segVal)}&limit=${limit}&scope=${SCOPE}`;
+    const url=`/api/rankings/leaderboard?metric=${encodeURIComponent(m.key)}&segment_type=${segType}&segment_value=${encodeURIComponent(segVal)}&limit=${limit}&scope=${SCOPE}&gender=${GENDER}`;
     rows=((await (await fetch(url)).json()).leaderboard)||[];
   }catch{ rows=[]; }
   const cohortEl=document.getElementById('cohort');
   const unit = SCOPE==='team'?'team':'player';
   if(!rows.length){ body.innerHTML=`<tr><td colspan="5" class="empty">No ranked ${unit}s yet for this view. Rankings appear as ${SCOPE==='team'?'programs':'players'} enter rounds.</td></tr>`; cohortEl.textContent=''; return; }
-  cohortEl.textContent=`Ranked among ${rows[0].cohort_n} ${unit}${rows[0].cohort_n===1?'':'s'} · ${segType==='national'?'all college golf':segVal}`;
+  cohortEl.textContent=`Ranked among ${rows[0].cohort_n} ${unit}${rows[0].cohort_n===1?'':'s'} · ${GENDER==='W'?'Women':'Men'} · ${segType==='national'?'all college golf':segVal}`;
   body.innerHTML=rows.map(r=>`<tr>
     <td class="rk ${r.rank<=3?'top':''}">${r.rank}</td>
     <td><strong>${esc(SCOPE==='team'?r.team:r.player)}</strong></td>

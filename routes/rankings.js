@@ -26,6 +26,7 @@ router.get('/leaderboard', async (req, res) => {
       metricKey: req.query.metric,
       segmentType: req.query.segment_type || 'national',
       segmentValue: req.query.segment_value || 'ALL',
+      gender: req.query.gender || 'M',
       limit: req.query.limit,
     };
     const isTeam = req.query.scope === 'team';

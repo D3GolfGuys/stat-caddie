@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const requireAdmin = require('../middleware/requireAdmin');
-const { seedDemo, seedTeam, clearDemo } = require('../services/demoSeed');
+const { seedDemo, seedTeam, seedLeague, clearDemo } = require('../services/demoSeed');
 const rankings = require('../services/rankings');
 
 // Owner-only. Every route here requires a valid session AND the admin email.
@@ -80,6 +80,15 @@ router.post('/clear-demo', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Failed to clear demo data' });
   }
+});
+
+// POST /api/admin/seed-league — seed a demo league across divisions, then rank.
+router.post('/seed-league', async (req, res) => {
+  try {
+    const seeded = await seedLeague(pool);
+    const ranked = await rankings.recompute(pool, { seasonLabel: process.env.SEASON_LABEL || 'current' });
+    res.json({ ok: true, seeded, ranked });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to seed league' }); }
 });
 
 // POST /api/admin/recompute-rankings — recompute stat profiles + rankings now.
