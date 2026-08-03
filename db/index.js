@@ -307,6 +307,7 @@ const schema = `
     computed_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(metric_id, season_id, segment_type, segment_value, gender, player_id)
   );
+  ALTER TABLE rankings ADD COLUMN IF NOT EXISTS gender VARCHAR(12);
   CREATE INDEX IF NOT EXISTS idx_rankings_lookup ON rankings(metric_id, season_id, segment_type, segment_value, gender, rank);
   CREATE INDEX IF NOT EXISTS idx_rankings_player ON rankings(player_id, season_id);
 
@@ -390,6 +391,7 @@ const schema = `
     computed_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(metric_id, season_id, segment_type, segment_value, gender, team_id)
   );
+  ALTER TABLE team_rankings ADD COLUMN IF NOT EXISTS gender VARCHAR(12);
   CREATE INDEX IF NOT EXISTS idx_team_rankings_lookup ON team_rankings(metric_id, season_id, segment_type, segment_value, gender, rank);
   CREATE INDEX IF NOT EXISTS idx_team_rankings_team ON team_rankings(team_id, season_id);
 `;
