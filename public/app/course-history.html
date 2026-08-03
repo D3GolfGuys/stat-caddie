@@ -15,6 +15,8 @@
   .ch-table th{background:#f4f7f5;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px}
   .ch-table td{padding:9px 12px;border-top:1px solid #eef3ef;font-size:13.5px}
   .ch-table tr.tough-row td{background:#fbefe9}
+  .ch-table th.ch-sort{cursor:pointer;user-select:none;white-space:nowrap}
+  .ch-table th.ch-sort:hover{color:var(--green-mid)}
   .over{color:#c0392b;font-weight:700}.under{color:#1f7a44;font-weight:700}
   .mix{font-size:10px;color:var(--muted);margin-top:3px}
   .empty-hint{text-align:center;padding:22px;color:#aaa}
@@ -88,19 +90,40 @@ async function load(){
   renderTimeline((tR&&tR.ok)?((await tR.json()).visits||[]):[]);
 }
 function renderHoles(holes){
-  const box=document.getElementById('holes'), tough=document.getElementById('tough');
-  if(!holes.length){ box.innerHTML='<div class="empty-hint">No hole-by-hole data for this course yet.</div>'; tough.style.display='none'; return; }
-  const sorted=[...holes].sort((a,b)=>Number(b.avg_vs_par)-Number(a.avg_vs_par));
-  const worst=new Set(sorted.slice(0,3).map(h=>h.hole_num));
+  _holes=holes||[];
+  const tough=document.getElementById('tough');
+  if(!_holes.length){ document.getElementById('holes').innerHTML='<div class="empty-hint">No hole-by-hole data for this course yet.</div>'; tough.style.display='none'; return; }
+  _holeSort={key:'hole_num', dir:1};   // natural order (hole 1..18) on each course load
+  drawHoles();
+}
+let _holes=[], _holeSort={key:'hole_num', dir:1};
+const HOLE_DEFDIR={hole_num:1, par:1, plays:-1, avg_score:-1, avg_vs_par:-1}; // first-click direction
+function sortHoles(key){
+  if(_holeSort.key===key){ _holeSort.dir=-_holeSort.dir; } else { _holeSort={key, dir:(HOLE_DEFDIR[key]||1)}; }
+  drawHoles();
+}
+function drawHoles(){
+  const box=document.getElementById('holes'), tough=document.getElementById('tough'), holes=_holes;
+  if(!holes.length) return;
+  // "Toughest holes" callout + row highlight are always by vs par, independent of table sort
+  const byTough=[...holes].sort((a,b)=>Number(b.avg_vs_par)-Number(a.avg_vs_par));
+  const worst=new Set(byTough.slice(0,3).map(h=>h.hole_num));
   tough.style.display='block';
-  tough.innerHTML='<strong>Toughest holes:</strong> '+sorted.slice(0,3).map(h=>`#${h.hole_num} (par ${h.par}, ${vsFmt(h.avg_vs_par)})`).join('   ·   ');
+  tough.innerHTML='<strong>Toughest holes:</strong> '+byTough.slice(0,3).map(h=>`#${h.hole_num} (par ${h.par}, ${vsFmt(h.avg_vs_par)})`).join('   ·   ');
   const maxAbs=Math.max(0.5, ...holes.map(h=>Math.abs(Number(h.avg_vs_par))));
-  box.innerHTML='<table class="ch-table"><thead><tr><th>Hole</th><th>Par</th><th>Plays</th><th>Avg</th><th>vs Par</th><th>Scoring mix (B/P/Bo/Db+)</th></tr></thead><tbody>'+
-    holes.map(h=>{ const vp=Number(h.avg_vs_par); const w=Math.min(50,Math.abs(vp)/maxAbs*50);
+  // apply the active column sort (ties fall back to hole number)
+  const k=_holeSort.key, dir=_holeSort.dir;
+  const rows=[...holes].sort((a,b)=>{ const av=Number(a[k]), bv=Number(b[k]); if(av<bv) return -dir; if(av>bv) return dir; return Number(a.hole_num)-Number(b.hole_num); });
+  const cols=[['hole_num','Hole'],['par','Par'],['plays','Plays'],['avg_score','Avg'],['avg_vs_par','vs Par']];
+  const arrow=key=> _holeSort.key===key ? (_holeSort.dir>0?' ▲':' ▼') : '';
+  const thead='<tr>'+cols.map(([key,lab])=>`<th class="ch-sort" onclick="sortHoles('${key}')" title="Sort by ${lab}">${lab}${arrow(key)}</th>`).join('')+'<th>Scoring mix (B/P/Bo/Db+)</th></tr>';
+  box.innerHTML='<table class="ch-table"><thead>'+thead+'</thead><tbody>'+
+    rows.map(h=>{ const vp=Number(h.avg_vs_par); const w=Math.min(50,Math.abs(vp)/maxAbs*50);
       const bar='<div style="height:8px;border-radius:4px;background:#eef3ef;position:relative;margin-bottom:2px;"><div style="position:absolute;'+(vp>=0?'left:50%':'right:50%')+';width:'+w+'%;height:8px;border-radius:4px;background:'+(vp>0?'#c0392b':'#1f7a44')+';"></div></div>';
       return `<tr class="${worst.has(h.hole_num)?'tough-row':''}"><td><strong>${h.hole_num}</strong></td><td>${h.par}</td><td>${h.plays}</td><td>${h.avg_score}</td><td class="${vp>0?'over':vp<0?'under':''}">${vsFmt(h.avg_vs_par)}</td><td style="min-width:150px;">${bar}<div class="mix">${h.birdies} / ${h.pars} / ${h.bogeys} / ${h.doubles_plus}</div></td></tr>`;
     }).join('')+'</tbody></table>';
 }
+
 function renderTimeline(visits){
   const box=document.getElementById('timeline');
   if(!visits.length){ box.innerHTML='<div class="empty-hint">No visits recorded.</div>'; return; }
