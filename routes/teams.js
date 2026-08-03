@@ -165,4 +165,99 @@ router.get('/course-timeline', requireTeamAdmin, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load course timeline' }); }
 });
 
+
+// ── Team scoring & performance history (coach only) ──────────────────────────
+// Count the 4 LOWEST player scores each round; the rest are "dropped". This one
+// rule covers both 5-play/4-count and 6-play/4-count events (the extra players
+// just add to the drop). Returns a span summary plus a per-event history with
+// round-by-round detail. span=year (default) = current season; career = all-time.
+function seasonStartDate() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  const startYear = m >= 8 ? y : y - 1;
+  return `${startYear}-08-01`;
+}
+const TEAM_COUNT = 4; // scores that count toward the team total each round
+
+router.get('/team-scores', requireTeamAdmin, async (req, res) => {
+  try {
+    const span = req.query.span === 'career' ? 'career' : 'year';
+    const params = [req.user.team_id];
+    let dateClause = '';
+    if (span === 'year') { params.push(seasonStartDate()); dateClause = 'AND r.round_date >= $2'; }
+    const { rows } = await pool.query(
+      `SELECT r.tournament, r.round_num,
+              to_char(r.round_date, 'YYYY-MM-DD') AS round_date,
+              r.course_name, r.player_name, u.id AS uid,
+              (r.summary->>'totalScore')::numeric AS score,
+              (r.summary->>'vspar')::numeric      AS vspar
+         FROM rounds r JOIN users u ON u.id = r.user_id
+        WHERE u.team_id = $1 AND u.role <> 'team_admin'
+          AND r.summary ? 'totalScore' AND (r.summary->>'totalScore') <> '' ${dateClause}
+        ORDER BY r.round_date, r.tournament, r.round_num, score ASC, r.player_name`,
+      params);
+
+    // group player rows -> team-rounds (one per tournament+round within a season)
+    const roundMap = new Map();
+    for (const row of rows) {
+      if (row.score == null) continue;
+      const [yy, mm] = String(row.round_date).split('-').map(Number);
+      const ay = mm >= 8 ? yy : yy - 1;                    // academic year of this round
+      const evKey = `${row.tournament || '—'}__${ay}`; // separate yearly recurrences
+      const rKey  = `${evKey}__R${row.round_num}__${row.round_date}`;
+      if (!roundMap.has(rKey)) roundMap.set(rKey, { evKey, tournament: row.tournament, course: row.course_name, round_num: row.round_num, date: row.round_date, ay, players: [] });
+      roundMap.get(rKey).players.push({ name: row.player_name, score: Number(row.score), vspar: row.vspar == null ? null : Number(row.vspar) });
+    }
+
+    // per team-round: 4 lowest count, the rest are dropped
+    const teamRounds = [];
+    for (const r of roundMap.values()) {
+      const sorted = r.players.slice().sort((a, b) => a.score - b.score || String(a.name).localeCompare(String(b.name)));
+      const counters = sorted.slice(0, TEAM_COUNT);
+      const dropped  = sorted.slice(TEAM_COUNT);
+      const teamScore = counters.reduce((s, p) => s + p.score, 0);
+      const teamToPar = counters.length && counters.every(p => p.vspar != null) ? counters.reduce((s, p) => s + p.vspar, 0) : null;
+      teamRounds.push({ evKey: r.evKey, tournament: r.tournament, course: r.course, round_num: r.round_num, date: r.date, ay: r.ay, counters, dropped, teamScore, teamToPar });
+    }
+    teamRounds.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.round_num - b.round_num);
+
+    // group team-rounds -> events (tournaments)
+    const evMap = new Map();
+    for (const tr of teamRounds) {
+      if (!evMap.has(tr.evKey)) evMap.set(tr.evKey, { tournament: tr.tournament, course: tr.course, rounds: [] });
+      evMap.get(tr.evKey).rounds.push(tr);
+    }
+    const events = [];
+    for (const ev of evMap.values()) {
+      const teamTotal = ev.rounds.reduce((s, r) => s + r.teamScore, 0);
+      const toPar = ev.rounds.every(r => r.teamToPar != null) ? ev.rounds.reduce((s, r) => s + r.teamToPar, 0) : null;
+      const drops = ev.rounds.flatMap(r => r.dropped.map(p => p.score));
+      const avgDropped = drops.length ? +(drops.reduce((s, v) => s + v, 0) / drops.length).toFixed(1) : null;
+      events.push({
+        tournament: ev.tournament, course: ev.course,
+        firstDate: ev.rounds[0].date, lastDate: ev.rounds[ev.rounds.length - 1].date,
+        roundCount: ev.rounds.length, teamTotal, teamToPar: toPar, avgDropped,
+        rounds: ev.rounds.map(r => ({
+          round_num: r.round_num, date: r.date, teamScore: r.teamScore, teamToPar: r.teamToPar,
+          counters: r.counters.map(p => ({ name: p.name, score: p.score, vspar: p.vspar })),
+          dropped:  r.dropped.map(p => ({ name: p.name, score: p.score, vspar: p.vspar })),
+        })),
+      });
+    }
+    events.sort((a, b) => String(b.firstDate).localeCompare(String(a.firstDate))); // newest first
+
+    // span summary
+    const scoreVals = teamRounds.map(r => r.teamScore);
+    const allDrops  = teamRounds.flatMap(r => r.dropped.map(p => p.score));
+    const summary = {
+      events: events.length,
+      rounds: teamRounds.length,
+      teamScoringAvg: scoreVals.length ? +(scoreVals.reduce((s, v) => s + v, 0) / scoreVals.length).toFixed(1) : null,
+      avgDropped: allDrops.length ? +(allDrops.reduce((s, v) => s + v, 0) / allDrops.length).toFixed(1) : null,
+      bestTeamRound: scoreVals.length ? Math.min(...scoreVals) : null,
+    };
+    res.json({ ok: true, span, counting: TEAM_COUNT, summary, events });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load team scores' }); }
+});
+
 module.exports = router;

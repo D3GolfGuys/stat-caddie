@@ -159,6 +159,24 @@
         <div class="sv-grid" id="team-statview"></div>
       </div>
 
+      <!-- Team Scoring &amp; performance history (drop the high scores) -->
+      <div class="table-card" id="team-scoring-card">
+        <div class="table-card-header"><h3>Team Scoring &amp; History <span style="font-weight:400;color:var(--muted);font-size:12px;">(4 lowest scores count each round — extras dropped)</span></h3>
+          <span id="ts-span" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px;margin-left:8px;">
+            <button type="button" data-span="year" onclick="setScoreSpan('year')" style="border:none;background:var(--green-mid);color:#fff;padding:3px 9px;cursor:pointer;font-weight:700;">This Year</button>
+            <button type="button" data-span="career" onclick="setScoreSpan('career')" style="border:none;background:#fff;color:var(--muted);padding:3px 9px;cursor:pointer;font-weight:700;">All-Time</button>
+          </span>
+        </div>
+        <div class="summ-strip" id="ts-strip" style="margin-bottom:12px;">
+          <div class="ss-cell"><div class="ss-v" id="ts-avg">—</div><div class="ss-l">Team Scoring Avg</div></div>
+          <div class="ss-cell"><div class="ss-v" id="ts-drop">—</div><div class="ss-l">Avg Dropped Score</div></div>
+          <div class="ss-cell"><div class="ss-v" id="ts-best">—</div><div class="ss-l">Best Team Round</div></div>
+          <div class="ss-cell"><div class="ss-v" id="ts-events">—</div><div class="ss-l">Events</div></div>
+          <div class="ss-cell"><div class="ss-v" id="ts-rounds">—</div><div class="ss-l">Team Rounds</div></div>
+        </div>
+        <div id="ts-history" style="overflow-x:auto;"><div class="empty-hint">Loading…</div></div>
+      </div>
+
       <!-- Team Rankings (national / division / conference percentiles) -->
       <div class="table-card" style="margin-bottom:16px;">
         <div class="table-card-header"><h3>Team Rankings</h3>
@@ -426,6 +444,47 @@ document.querySelectorAll('th.sortable').forEach(th=>{
   });
 });
 
+// ── Team scoring & performance history ──────────────────
+function tsEsc(x){ return String(x==null?'':x).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function tsToPar(v){ if(v==null) return ''; const n=Math.round(v); return n===0?'E':(n>0?'+'+n:''+n); }
+let _scoreSpan='year';
+function setScoreSpan(sp){ _scoreSpan=sp; document.querySelectorAll('#ts-span button').forEach(b=>{ const on=b.dataset.span===sp; b.style.background=on?'var(--green-mid)':'#fff'; b.style.color=on?'#fff':'var(--muted)'; }); loadTeamScores(); }
+function tsToggle(i){ const el=document.getElementById('ts-det-'+i), ar=document.getElementById('ts-ar-'+i); if(!el) return; const open=el.style.display==='none'; el.style.display=open?'':'none'; if(ar) ar.textContent=open?'▾':'▸'; }
+function tsRoundDetail(ev){
+  let h='<div style="padding:8px 14px;">';
+  ev.rounds.forEach(rd=>{
+    const cnt=rd.counters.map(p=>`${tsEsc(p.name)} <strong>${p.score}</strong>`).join(' &nbsp;·&nbsp; ');
+    const drp=rd.dropped.length?rd.dropped.map(p=>`${tsEsc(p.name)} ${p.score}`).join(' &nbsp;·&nbsp; '):'—';
+    h+=`<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">`
+      +`<span style="font-weight:700;">R${rd.round_num}</span> <span style="color:var(--muted);">${tsEsc(rd.date)}</span>`
+      +` &nbsp;•&nbsp; Team <strong>${rd.teamScore}</strong>${rd.teamToPar!=null?` (${tsToPar(rd.teamToPar)})`:''}`
+      +`<div style="margin-top:2px;"><span style="color:var(--green-dark);font-weight:600;">Counted:</span> ${cnt}</div>`
+      +`<div style="color:var(--muted);"><span style="font-weight:600;">Dropped:</span> ${drp}</div></div>`;
+  });
+  return h+'</div>';
+}
+async function loadTeamScores(){
+  const hist=document.getElementById('ts-history');
+  if(!hist) return;
+  hist.innerHTML='<div class="empty-hint">Loading…</div>';
+  let data=null;
+  try{ const r=await API.get('/api/teams/team-scores?span='+_scoreSpan); data=(r&&r.ok)?await r.json():null; }catch(e){ data=null; }
+  const s=(data&&data.summary)||{};
+  const setv=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=(v==null||v==='')?'—':v; };
+  setv('ts-avg', s.teamScoringAvg); setv('ts-drop', s.avgDropped); setv('ts-best', s.bestTeamRound);
+  setv('ts-events', s.events); setv('ts-rounds', s.rounds);
+  const events=(data&&data.events)||[];
+  if(!events.length){ hist.innerHTML='<div class="empty-hint">No team scores yet for this view — team totals appear once at least 4 players post a round in the same event.</div>'; return; }
+  let html='<table class="app-table"><thead><tr><th>Event</th><th>Course</th><th>Dates</th><th style="text-align:center;">Rds</th><th style="text-align:right;">Team Total</th><th style="text-align:right;">To Par</th><th style="text-align:right;">Avg Drop</th><th></th></tr></thead><tbody>';
+  events.forEach((ev,i)=>{
+    const dates=ev.firstDate===ev.lastDate?ev.firstDate:`${ev.firstDate} – ${ev.lastDate}`;
+    html+=`<tr style="cursor:pointer;" onclick="tsToggle(${i})"><td style="font-weight:700;">${tsEsc(ev.tournament||'—')}</td><td>${tsEsc(ev.course||'—')}</td><td style="white-space:nowrap;">${tsEsc(dates)}</td><td style="text-align:center;">${ev.roundCount}</td><td style="text-align:right;font-weight:800;">${ev.teamTotal}</td><td style="text-align:right;">${tsToPar(ev.teamToPar)}</td><td style="text-align:right;">${ev.avgDropped==null?'—':ev.avgDropped.toFixed(1)}</td><td style="color:var(--muted);" id="ts-ar-${i}">▸</td></tr>`;
+    html+=`<tr id="ts-det-${i}" style="display:none;"><td colspan="8" style="background:#f7f9f8;padding:0;">${tsRoundDetail(ev)}</td></tr>`;
+  });
+  html+='</tbody></table>';
+  hist.innerHTML=html;
+}
+
 // ── load ────────────────────────────────────────────────
 async function load(){
   const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
@@ -434,6 +493,7 @@ async function load(){
   renderTeamSummary();
   renderRoster();
   loadTeamRankings();
+  loadTeamScores();
   if(selectedPlayer && MEMBERS.some(m=>m.id===selectedPlayer)) openDetail(selectedPlayer);
 }
 
