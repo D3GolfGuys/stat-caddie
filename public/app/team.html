@@ -82,7 +82,8 @@
 
       <!-- Invite modal -->
       <div id="invite-modal" style="display:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin:12px 0;max-width:520px;">
-        <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;">Invite a Player</h3>
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:4px;">Invite a Player</h3>
+        <p id="invite-seat-hint" style="font-size:12px;color:var(--muted);margin-bottom:12px;">15 player seats included. Extra players are $2/player/mo.</p>
         <div class="form-group"><label>Player Email Address</label><input type="email" id="invite-email" placeholder="player@example.com"></div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary btn-sm" onclick="sendInvite()">Send Invite</button>
@@ -225,7 +226,7 @@ const fmtP  = v => v==null?'—':Number(v).toFixed(1)+'%';
 const avg   = (arr,key) => { const v=arr.filter(s=>s&&s[key]!=null); return v.length ? v.reduce((a,b)=>a+b[key],0)/v.length : null; };
 
 // ── state ───────────────────────────────────────────────
-let TEAM=null, MEMBERS=[], ROUNDS=[];
+let TEAM=null, MEMBERS=[], ROUNDS=[], SEATS=null;
 let sortKey='scoringAvg', sortDir=1;   // dir: 1 asc, -1 desc. Lower score is better → asc default.
 let selectedPlayer=null;
 
@@ -245,7 +246,21 @@ function statsFor(userId){
 }
 
 // ── invite / manage ─────────────────────────────────────
-function openInvite(){ const m=document.getElementById('invite-modal'); m.style.display='block'; document.getElementById('invite-email').focus(); }
+function openInvite(){
+  const m=document.getElementById('invite-modal'); m.style.display='block';
+  const hint=document.getElementById('invite-seat-hint');
+  if(hint){
+    if(SEATS){
+      hint.textContent = SEATS.remaining>0
+        ? `${SEATS.remaining} of ${SEATS.cap} seats available. Extra players beyond your ${SEATS.included} included seats are $${SEATS.price_per_seat}/player/mo.`
+        : `All ${SEATS.cap} seats are in use. You can add seats at $${SEATS.price_per_seat}/player/mo below.`;
+    } else {
+      hint.textContent = '15 player seats included. Extra players are $2/player/mo.';
+    }
+  }
+  document.getElementById('invite-result').innerHTML='';
+  document.getElementById('invite-email').focus();
+}
 function openSettings(){
   document.getElementById('set-name').value=(TEAM&&TEAM.name)||'';
   document.getElementById('set-division').value=(TEAM&&TEAM.division)||'';
@@ -296,7 +311,45 @@ async function sendInvite(){
     out.style.color='var(--green-mid)';
     document.getElementById('invite-email').value='';
     await load();
+  } else if(data.code==='SEATS_REQUIRED'){
+    renderAddSeatsPrompt(data.seats||SEATS);
   } else { out.textContent=data.error||'Failed to send invite'; out.style.color='var(--red)'; }
+}
+
+// Shown when a coach hits the seat cap — buy overflow seats at $2/player/mo, then retry the invite.
+function renderAddSeatsPrompt(seats){
+  const cap = seats ? seats.cap : (TEAM&&TEAM.max_members)||15;
+  const price = seats ? seats.price_per_seat : 2;
+  const out=document.getElementById('invite-result');
+  out.style.color='var(--text)';
+  out.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fbfaf5;">
+      <div style="font-weight:700;color:var(--green-dark);margin-bottom:4px;">You've used all ${cap} player seats</div>
+      <div style="color:var(--muted);margin-bottom:10px;">Add seats to invite more players — <strong>$${price}/player/mo</strong>, billed on your next invoice.</div>
+      <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:11px;">Seats to add</label>
+          <input type="number" id="add-seats-count" min="1" max="200" value="1" style="width:90px;" oninput="updateSeatCost()">
+        </div>
+        <div style="font-size:12px;color:var(--muted);padding-bottom:10px;">= <span id="add-seats-cost">$${price}</span>/mo</div>
+        <button class="btn btn-primary btn-sm" style="margin-bottom:2px;" onclick="addSeatsAndInvite()">Add seats &amp; send invite</button>
+      </div>
+      <div id="add-seats-msg" style="margin-top:8px;font-size:12px;"></div>
+    </div>`;
+}
+function updateSeatCost(){
+  const n=Math.max(1, parseInt(document.getElementById('add-seats-count').value,10)||1);
+  const price = SEATS ? SEATS.price_per_seat : 2;
+  const el=document.getElementById('add-seats-cost'); if(el) el.textContent='$'+(n*price);
+}
+async function addSeatsAndInvite(){
+  const n=Math.max(1, parseInt(document.getElementById('add-seats-count').value,10)||1);
+  const msg=document.getElementById('add-seats-msg');
+  msg.style.color='var(--muted)'; msg.textContent='Adding seats…';
+  const r=await API.post('/api/teams/seats',{addSeats:n});
+  const d=r?await r.json():{};
+  if(r&&r.ok){ SEATS=d.seats||SEATS; await sendInvite(); }
+  else { msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Could not add seats.'; }
 }
 async function removeMember(userId, name, ev){
   ev.stopPropagation();
@@ -344,7 +397,14 @@ function sortedRoster(){
 function renderRoster(){
   const rows = sortedRoster();
   const players = playersOnly();
-  document.getElementById('member-count').textContent = `${players.length} player${players.length===1?'':'s'}`;
+  if(SEATS){
+    const parts = [`${SEATS.used} of ${SEATS.cap} player seats used`];
+    if(SEATS.pending) parts.push(`${SEATS.pending} pending`);
+    if(SEATS.extra_seats) parts.push(`+$${SEATS.monthly_addon}/mo for ${SEATS.extra_seats} extra`);
+    document.getElementById('member-count').textContent = parts.join(' · ');
+  } else {
+    document.getElementById('member-count').textContent = `${players.length} player${players.length===1?'':'s'}`;
+  }
   const tb=document.getElementById('roster-tbody');
   if(!players.length){ tb.innerHTML='<tr><td colspan="10" class="empty-hint">No players yet. Invite your first player above.</td></tr>'; return; }
   tb.innerHTML = rows.map((row,i)=>{
@@ -488,7 +548,7 @@ async function loadTeamScores(){
 // ── load ────────────────────────────────────────────────
 async function load(){
   const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
-  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; if(TEAM){ document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; const seg=[TEAM.division,TEAM.conference].filter(Boolean).join(' · '); document.getElementById('team-sub').textContent = seg ? seg + ' — click a player to drill into their game.' : 'Set your division in ⚙ Team Settings to unlock rankings — click a player to drill in.'; } }
+  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; SEATS=d.seats||null; if(TEAM){ document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; const seg=[TEAM.division,TEAM.conference].filter(Boolean).join(' · '); document.getElementById('team-sub').textContent = seg ? seg + ' — click a player to drill into their game.' : 'Set your division in ⚙ Team Settings to unlock rankings — click a player to drill in.'; } }
   if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
   renderTeamSummary();
   renderRoster();

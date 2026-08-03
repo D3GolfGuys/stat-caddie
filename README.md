@@ -153,9 +153,11 @@ webapp/
 
 | Plan | Price | Players | Features |
 |---|---|---|---|
-| Team | $29.99/mo | Up to 15 | Full player capture & reporting, team dashboard with drop-the-high scoring, course history, national rankings & leaderboards, roster management & invites, one-click player & team PDF reports |
+| Team | $29.99/mo | 15 included | Full player capture & reporting, team dashboard with drop-the-high scoring, course history, national rankings & leaderboards, roster management & invites, one-click player & team PDF reports |
 
 Signup is team-only: coaches create the account and invite players to join their roster.
+
+**Seat overflow (per-seat pricing).** The Team plan includes 15 player seats (the coach/admin does not count against them). Beyond 15, each additional player is $2/player/mo. When a coach hits the cap, inviting another player prompts them to add seats; adding seats raises the team's cap immediately (`POST /api/teams/seats`) and the overflow is reconciled on the next invoice. Seat usage — active players plus still-valid pending invitations — is returned in the `seats` object on `GET /api/teams/me`. During beta the overflow is billed manually rather than auto-charged.
 
 ---
 
@@ -187,6 +189,7 @@ Rankings are computed **only from rounds entered in College Golf Metrics** — t
 | POST | `/api/teams/invite` | ✓ Admin | Invite player by email |
 | DELETE | `/api/teams/members/:id` | ✓ Admin | Remove player |
 | GET | `/api/teams/rounds` | ✓ Admin | All team rounds + team scoring |
+| POST | `/api/teams/seats` | ✓ Admin | Add player seats beyond the included 15 ($2/player/mo) |
 | GET | `/api/rankings/metrics` | — | Metric registry for leaderboards |
 | GET | `/api/rankings/leaderboard` | — | Player/team rankings by metric, segment & gender |
 | GET | `/api/schools` | — | Schools reference (division/conference/region) |

@@ -5,6 +5,36 @@ const requireAuth = require('../middleware/requireAuth');
 const { requireTeamAdmin } = require('../middleware/requireSubscription');
 const { findOrCreateSchool } = require('../services/schools');
 
+// Pricing / seat model (Option B — per-seat overflow).
+// 15 player seats are included in the Team plan; each additional player is
+// billed at $2/mo. Billing is reconciled manually during beta — adding seats
+// simply raises the team's cap so the coach can keep inviting. The coach
+// (team_admin) does NOT consume a player seat.
+const INCLUDED_SEATS = 15;
+const PRICE_PER_SEAT = 2;
+
+// Seats consumed = active players + still-valid pending invitations.
+async function seatUsage(teamId) {
+  const [{ rows: t }, { rows: p }, { rows: inv }] = await Promise.all([
+    pool.query('SELECT max_members FROM teams WHERE id=$1', [teamId]),
+    pool.query("SELECT COUNT(*) FROM users WHERE team_id=$1 AND role='team_member'", [teamId]),
+    pool.query('SELECT COUNT(*) FROM invitations WHERE team_id=$1 AND used_at IS NULL AND expires_at > NOW()', [teamId]),
+  ]);
+  const cap = t[0]?.max_members || INCLUDED_SEATS;
+  const players = parseInt(p[0].count, 10);
+  const pending = parseInt(inv[0].count, 10);
+  const used = players + pending;
+  const extra = Math.max(0, cap - INCLUDED_SEATS);
+  return {
+    cap, players, pending, used,
+    remaining: Math.max(0, cap - used),
+    included: INCLUDED_SEATS,
+    extra_seats: extra,
+    price_per_seat: PRICE_PER_SEAT,
+    monthly_addon: extra * PRICE_PER_SEAT,
+  };
+}
+
 router.use(requireAuth);
 
 // GET /api/teams/me  — get current user's team info + members
@@ -16,7 +46,8 @@ router.get('/me', async (req, res) => {
     'SELECT id, name, email, role, created_at FROM users WHERE team_id=$1 ORDER BY role DESC, name',
     [req.user.team_id]
   );
-  res.json({ team: teamRows[0], members });
+  const seats = await seatUsage(req.user.team_id);
+  res.json({ team: teamRows[0], members, seats });
 });
 
 // PUT /api/teams/me  — update team name + ranking segment (admin only)
@@ -43,13 +74,14 @@ router.post('/invite', requireTeamAdmin, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
 
-  // Check member limit
-  const { rows: countRows } = await pool.query(
-    'SELECT COUNT(*) FROM users WHERE team_id=$1', [req.user.team_id]
-  );
-  const { rows: teamRows } = await pool.query('SELECT max_members FROM teams WHERE id=$1', [req.user.team_id]);
-  if (parseInt(countRows[0].count) >= (teamRows[0]?.max_members || 15)) {
-    return res.status(400).json({ error: 'Team member limit reached (15 max)' });
+  // Seat check — players + pending invites must stay within the team's cap.
+  const seats = await seatUsage(req.user.team_id);
+  if (seats.remaining < 1) {
+    return res.status(403).json({
+      code: 'SEATS_REQUIRED',
+      error: `You've used all ${seats.cap} player seats. Add seats at $${PRICE_PER_SEAT}/player/mo to invite more players.`,
+      seats,
+    });
   }
 
   // Check if already a member
@@ -67,7 +99,26 @@ router.post('/invite', requireTeamAdmin, async (req, res) => {
 
   const inviteUrl = `${process.env.APP_URL}/accept-invite.html?token=${token}`;
   // In production, send this via email. For now, return it in the response.
-  res.json({ ok: true, inviteUrl, note: 'Share this link with the player to join your team.' });
+  const seatsAfter = await seatUsage(req.user.team_id); // recount incl. this pending invite
+  res.json({ ok: true, inviteUrl, seats: seatsAfter, note: 'Share this link with the player to join your team.' });
+});
+
+// POST /api/teams/seats  — add player seats beyond the included 15 (admin only)
+// Beta: raises the team's cap immediately; the $2/player/mo overflow is billed
+// manually. `addSeats` is how many extra seats to purchase.
+router.post('/seats', requireTeamAdmin, async (req, res) => {
+  let addSeats = parseInt(req.body.addSeats, 10);
+  if (!Number.isFinite(addSeats) || addSeats < 1) {
+    return res.status(400).json({ error: 'Enter how many seats to add (1 or more).' });
+  }
+  addSeats = Math.min(addSeats, 200); // sane upper bound
+  const { rows } = await pool.query(
+    'UPDATE teams SET max_members = COALESCE(max_members, $1) + $2 WHERE id=$3 RETURNING max_members',
+    [INCLUDED_SEATS, addSeats, req.user.team_id]
+  );
+  const seats = await seatUsage(req.user.team_id);
+  console.log(`[seats] team ${req.user.team_id} added ${addSeats} seat(s) → cap ${rows[0].max_members} (+$${seats.monthly_addon}/mo)`);
+  res.json({ ok: true, added: addSeats, seats });
 });
 
 // GET /api/teams/invitations  — list pending invites (admin only)
