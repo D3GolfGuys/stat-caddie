@@ -286,15 +286,15 @@ router.put('/rounds/:id/holes', async (req, res) => {
         if (!hn || hn < 1 || hn > 36) continue;
         await client.query(
           `INSERT INTO round_holes
-             (round_id, hole_num, par, hcp, score, fw, gir, miss_dir, drive_dist, prox, putts, first_putt, three_putt, ud_att, ud_made, ss_att, ss_made, pen_strokes, notes, score_source)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'manual')
+             (round_id, hole_num, par, hcp, score, fw, gir, miss_dir, drive_dist, prox, putts, first_putt, three_putt, ud_att, ud_made, ss_att, ss_made, pen_strokes, notes, yardage, score_source)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'manual')
            ON CONFLICT (round_id, hole_num) DO UPDATE SET
              par=$3, hcp=$4, score=$5, fw=$6, gir=$7, miss_dir=$8, drive_dist=$9, prox=$10,
              putts=$11, first_putt=$12, three_putt=$13, ud_att=$14, ud_made=$15, ss_att=$16,
-             ss_made=$17, pen_strokes=$18, notes=$19, score_source='manual'`,
+             ss_made=$17, pen_strokes=$18, notes=$19, yardage=$20, score_source='manual'`,
           [id, hn, iv(h.par) || 4, iv(h.hcp), iv(h.score), sv(h.fw), sv(h.gir), sv(h.miss_dir),
            iv(h.drive_dist), fv(h.prox), iv(h.putts), fv(h.first_putt), bv(h.three_putt),
-           bv(h.ud_att), bv(h.ud_made), bv(h.ss_att), bv(h.ss_made), iv(h.pen_strokes) || 0, h.notes || null]
+           bv(h.ud_att), bv(h.ud_made), bv(h.ss_att), bv(h.ss_made), iv(h.pen_strokes) || 0, h.notes || null, iv(h.yardage)]
         );
       }
       if (summary) await client.query('UPDATE rounds SET summary=$1 WHERE id=$2', [JSON.stringify(summary), id]);

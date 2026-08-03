@@ -229,7 +229,7 @@
           <div id="hm-totals" style="font-size:13px;font-weight:700;color:var(--green-dark);margin-bottom:10px;"></div>
           <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;">
             <table class="app-table hole-grid" id="hm-grid"><thead><tr>
-              <th>#</th><th>Par</th><th>Score</th><th>FW</th><th>GIR</th><th>Drive</th><th>Prox</th><th>Putts</th><th>3P</th><th>U/D&nbsp;A</th><th>U/D&nbsp;M</th><th>S/S&nbsp;A</th><th>S/S&nbsp;M</th><th>Pen</th>
+              <th>#</th><th>Par</th><th>HCP</th><th>Yds</th><th>Score</th><th>FW</th><th>GIR</th><th>Miss</th><th>Drive</th><th>Prox</th><th>Putts</th><th>1st</th><th>3P</th><th>U/D&nbsp;A</th><th>U/D&nbsp;M</th><th>S/S&nbsp;A</th><th>S/S&nbsp;M</th><th>Pen</th><th>Notes</th>
             </tr></thead><tbody id="hm-body"></tbody></table>
           </div>
           <div id="hm-msg" style="font-size:12px;margin:8px 0;"></div>
@@ -545,8 +545,9 @@ async function openHoles(id){
   document.getElementById('holes-modal').classList.add('show');
 }
 function closeHoles(){ document.getElementById('holes-modal').classList.remove('show'); _holesRound=null; }
-function fwOpts(v){ return ['','H','L','R'].map(o=>`<option value="${o}" ${v===o?'selected':''}>${o||'—'}</option>`).join(''); }
+function fwOpts(v){ const base=['','H','L','R']; if(v && base.indexOf(v)<0) base.push(v); return base.map(o=>`<option value="${o}" ${v===o?'selected':''}>${o||'—'}</option>`).join(''); }
 function girOpts(v){ return ['','Y','N'].map(o=>`<option value="${o}" ${v===o?'selected':''}>${o||'—'}</option>`).join(''); }
+function missOpts(v){ const opts=[['','—'],['Sh','Short'],['Lo','Long'],['L','Left'],['R','Right']]; if(v && !opts.some(o=>o[0]===v)) opts.push([v,v]); return opts.map(o=>`<option value="${o[0]}" ${v===o[0]?'selected':''}>${o[1]}</option>`).join(''); }
 function renderHoleGrid(){
   const b=document.getElementById('hm-body'); const nv=v=>(v==null?'':v);
   const ck=v=>(v===true||v==='Y'||v==='true')?'checked':''; let rows='';
@@ -554,18 +555,23 @@ function renderHoleGrid(){
     rows+=`<tr data-h="${h}">
       <td><strong>${h}</strong></td>
       <td><input type="number" data-f="par" value="${nv(d.par)}" oninput="recalcHoles()"></td>
+      <td><input type="number" data-f="hcp" value="${nv(d.hcp)}"></td>
+      <td><input type="number" data-f="yardage" value="${nv(d.yardage)}"></td>
       <td><input type="number" data-f="score" value="${nv(d.score)}" oninput="recalcHoles()"></td>
       <td><select data-f="fw">${fwOpts(d.fw||'')}</select></td>
       <td><select data-f="gir">${girOpts(d.gir||'')}</select></td>
+      <td><select data-f="miss_dir">${missOpts(d.miss_dir||'')}</select></td>
       <td><input type="number" data-f="drive_dist" value="${nv(d.drive_dist)}"></td>
       <td><input type="number" step="0.1" data-f="prox" value="${nv(d.prox)}"></td>
       <td><input type="number" data-f="putts" value="${nv(d.putts)}"></td>
+      <td><input type="number" step="0.1" data-f="first_putt" value="${nv(d.first_putt)}"></td>
       <td><input type="checkbox" data-f="three_putt" ${ck(d.three_putt)}></td>
       <td><input type="checkbox" data-f="ud_att" ${ck(d.ud_att)}></td>
       <td><input type="checkbox" data-f="ud_made" ${ck(d.ud_made)}></td>
       <td><input type="checkbox" data-f="ss_att" ${ck(d.ss_att)}></td>
       <td><input type="checkbox" data-f="ss_made" ${ck(d.ss_made)}></td>
-      <td><input type="number" data-f="pen_strokes" value="${nv(d.pen_strokes)}"></td></tr>`;
+      <td><input type="number" data-f="pen_strokes" value="${nv(d.pen_strokes)}"></td>
+      <td><input type="text" data-f="notes" value="${aEsc(d.notes||'')}" style="width:120px;text-align:left;"></td></tr>`;
   }
   b.innerHTML=rows; recalcHoles();
 }
@@ -574,10 +580,11 @@ function gatherHoles(){
   document.querySelectorAll('#hm-body tr').forEach(tr=>{
     const h=parseInt(tr.dataset.h); const carried=_holesData[h]||{};
     const g=f=>{ const el=tr.querySelector(`[data-f="${f}"]`); if(!el) return null; return el.type==='checkbox'?el.checked:el.value; };
-    out.push({ hole_num:h, par:g('par'), score:g('score'), fw:g('fw'), gir:g('gir'),
-      drive_dist:g('drive_dist'), prox:g('prox'), putts:g('putts'), three_putt:g('three_putt'),
+    out.push({ hole_num:h, par:g('par'), hcp:g('hcp'), yardage:g('yardage'), score:g('score'),
+      fw:g('fw'), gir:g('gir'), miss_dir:g('miss_dir'), drive_dist:g('drive_dist'), prox:g('prox'),
+      putts:g('putts'), first_putt:g('first_putt'), three_putt:g('three_putt'),
       ud_att:g('ud_att'), ud_made:g('ud_made'), ss_att:g('ss_att'), ss_made:g('ss_made'),
-      pen_strokes:g('pen_strokes'), hcp:carried.hcp, miss_dir:carried.miss_dir, first_putt:carried.first_putt, notes:carried.notes });
+      pen_strokes:g('pen_strokes'), notes:g('notes') });
   });
   return out;
 }
