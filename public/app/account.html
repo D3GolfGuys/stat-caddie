@@ -119,7 +119,7 @@ async function openBillingPortal() {
   document.getElementById('profile-name').value  = currentUser.name;
   document.getElementById('profile-email').value = currentUser.email;
 
-  const planNames = { individual:'Individual ($9.99/mo)', team:'Team ($39.99/mo)' };
+  const planNames = { individual:'Individual ($9.99/mo)', team:'Team ($29.99/mo)' };
   document.getElementById('sub-plan').textContent = planNames[currentUser.subscription_plan] || (currentUser.role === 'team_member' ? 'Team Member' : 'No active plan');
 
   const status = currentUser.subscription_status;

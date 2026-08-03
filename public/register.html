@@ -39,7 +39,7 @@
     <div class="plan-toggle" id="plan-toggle" style="grid-template-columns:1fr;">
       <div class="plan-opt featured selected" id="opt-team">
         <div class="po-name">Coach · Team ⭐</div>
-        <div class="po-price" style="color:var(--gold);">$39.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
+        <div class="po-price" style="color:var(--gold);">$29.99<span style="font-size:12px;font-weight:400;">/mo</span></div>
         <div class="po-desc">Create a team, invite players</div>
       </div>
     </div>
@@ -136,14 +136,14 @@
 
     document.getElementById('submit-btn').textContent = betaMode
       ? (isCoach ? 'Create Team & Account →' : 'Create Account →')
-      : (isCoach ? 'Continue to Payment — $39.99/mo →' : 'Continue to Payment — $9.99/mo →');
+      : (isCoach ? 'Continue to Payment — $29.99/mo →' : 'Continue to Payment — $9.99/mo →');
   }
 
   // Where a new account lands after signup, by type.
   const homeFor = type => type === 'coach' ? '/app/team.html' : '/app/index.html';
   const defaultBtnText = () => betaMode
     ? (selectedType === 'coach' ? 'Create Team & Account →' : 'Create Account →')
-    : (selectedType === 'coach' ? 'Continue to Payment — $39.99/mo →' : 'Continue to Payment — $9.99/mo →');
+    : (selectedType === 'coach' ? 'Continue to Payment — $29.99/mo →' : 'Continue to Payment — $9.99/mo →');
 
   document.getElementById('reg-form').addEventListener('submit', async e => {
     e.preventDefault();

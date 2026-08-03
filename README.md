@@ -50,7 +50,7 @@ Edit `.env` with your values:
 1. Log in to [dashboard.stripe.com](https://dashboard.stripe.com)
 2. Go to **Products** → Create two products:
    - **Stat Caddie Individual** — $9.99/month recurring → copy the Price ID
-   - **Stat Caddie Team** — $39.99/month recurring → copy the Price ID
+   - **Stat Caddie Team** — $29.99/month recurring → copy the Price ID
 3. Go to **Webhooks** → Add endpoint: `https://your-domain.com/api/subscriptions/webhook`
    - Events to listen for:
      - `checkout.session.completed`
@@ -134,7 +134,7 @@ webapp/
 | Plan | Price | Players | Features |
 |---|---|---|---|
 | Individual | $9.99/mo | 1 | All capture & reporting tools |
-| Team | $39.99/mo | Up to 15 | Individual features + team roster, aggregate reports, player invitations |
+| Team | $29.99/mo | Up to 15 | Individual features + team roster, aggregate reports, player invitations |
 
 ---
 
