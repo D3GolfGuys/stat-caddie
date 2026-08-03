@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const reconcile = require('../services/reconcile');
+const { logError } = require('../services/errorLog');
 const requireAuth = require('../middleware/requireAuth');
 const requireSubscription = require('../middleware/requireSubscription');
 
@@ -104,6 +105,7 @@ router.post('/', async (req, res) => {
     res.status(201).json({ id: roundId, status });
   } catch (err) {
     console.error(err);
+    await logError('rounds:create', err, { userId: req.user.id });
     res.status(500).json({ error: 'Failed to save round' });
   }
 });

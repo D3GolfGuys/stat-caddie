@@ -394,6 +394,17 @@ const schema = `
   ALTER TABLE team_rankings ADD COLUMN IF NOT EXISTS gender VARCHAR(12);
   CREATE INDEX IF NOT EXISTS idx_team_rankings_lookup ON team_rankings(metric_id, season_id, segment_type, segment_value, gender, rank);
   CREATE INDEX IF NOT EXISTS idx_team_rankings_team ON team_rankings(team_id, season_id);
+
+  CREATE TABLE IF NOT EXISTS error_log (
+    id SERIAL PRIMARY KEY,
+    source VARCHAR(120),
+    message TEXT,
+    detail TEXT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    resolved_at TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_error_log_unresolved ON error_log(resolved_at, created_at DESC);
 `;
 
 async function initDB() {

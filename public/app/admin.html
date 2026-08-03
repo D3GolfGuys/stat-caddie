@@ -23,6 +23,33 @@
   .badge.active { background:#e6f6ec; color:#0a7d3c; }
   .badge.inactive { background:#f3f4f5; color:#6b7c73; }
   .muted-cell { color:var(--muted); }
+  /* Admin console (Phase 1) */
+  .tabbar { display:flex; gap:4px; border-bottom:1px solid var(--border); margin:6px 0 22px; flex-wrap:wrap; }
+  .tabbar button { background:none; border:none; padding:10px 14px; font-size:14px; font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; }
+  .tabbar button.on { color:var(--green-dark); border-bottom-color:var(--green-mid); }
+  .pill { display:inline-block; min-width:16px; text-align:center; font-size:11px; font-weight:700; background:#c62828; color:#fff; border-radius:9px; padding:1px 6px; margin-left:6px; }
+  .pill.zero { background:#e6f6ec; color:#0a7d3c; }
+  .alert-group { border:1px solid var(--border); border-radius:12px; margin-bottom:16px; overflow:hidden; background:#fff; }
+  .alert-group .ag-head { display:flex; align-items:center; gap:10px; padding:12px 16px; background:#faf8f2; border-bottom:1px solid var(--border); font-weight:700; color:var(--green-dark); font-size:14px; }
+  .ag-count { margin-left:auto; font-size:12px; color:var(--muted); font-weight:600; }
+  .ag-empty { padding:16px; color:var(--muted); font-size:13px; text-align:center; }
+  .controls-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .controls-row input, .controls-row select { padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px; }
+  .st { display:inline-block; font-size:11px; font-weight:700; border-radius:9px; padding:2px 8px; }
+  .st.conflict { background:#fdecea; color:#c62828; }
+  .st.score_only { background:#fff4e5; color:#b26a00; }
+  .st.stats_only { background:#eef3ef; color:#4a5a52; }
+  .st.confirmed { background:#e6f6ec; color:#0a7d3c; }
+  .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:300; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; }
+  .modal-backdrop.show { display:flex; }
+  .modal { background:#fff; border-radius:14px; padding:22px; width:520px; max-width:100%; }
+  .modal h3 { margin:0 0 14px; color:var(--green-dark); font-size:16px; }
+  .fld { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+  .fld label { font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); font-weight:700; }
+  .fld input, .fld select { padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:14px; }
+  .fld-row { display:flex; gap:10px; } .fld-row .fld { flex:1; }
+  .link-btn { background:none; border:none; color:var(--green-mid); font-weight:600; cursor:pointer; font-size:12px; padding:2px 6px; }
+  .link-btn.danger { color:var(--red); }
 </style>
 </head>
 <body>
@@ -58,6 +85,15 @@
       <div class="page-sub">Beta activity across all users. Visible to you only.</div>
 
       <div id="admin-error" style="display:none;background:#fbeae7;color:#9a3b2f;border-radius:8px;padding:12px 16px;margin-bottom:16px;"></div>
+
+      <div class="tabbar" id="admin-tabs">
+        <button class="on" data-tab="overview" onclick="showTab('overview')">Overview</button>
+        <button data-tab="alerts" onclick="showTab('alerts')">Alerts <span class="pill zero" id="pill-alerts">0</span></button>
+        <button data-tab="rounds" onclick="showTab('rounds')">Rounds</button>
+        <button data-tab="teams" onclick="showTab('teams')">Teams</button>
+      </div>
+
+      <div id="tab-overview" class="tabpane">
 
       <!-- KPI cards -->
       <div class="admin-grid" id="kpi-grid">
@@ -119,6 +155,68 @@
           <tbody id="users-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:#aaa;">Loading…</td></tr></tbody>
         </table>
       </div>
+      </div><!-- /tab-overview -->
+
+      <div id="tab-alerts" class="tabpane" style="display:none;">
+        <div id="alerts-body"><div class="ag-empty">Loading…</div></div>
+      </div>
+
+      <div id="tab-rounds" class="tabpane" style="display:none;">
+        <div class="controls-row">
+          <input id="rd-search" type="text" placeholder="Search player, tournament, course…" oninput="debouncedRounds()" style="min-width:260px;">
+          <select id="rd-status" onchange="loadRounds()">
+            <option value="">All statuses</option>
+            <option value="conflict">Conflict</option>
+            <option value="score_only">Score only</option>
+            <option value="stats_only">Stats only</option>
+            <option value="confirmed">Confirmed</option>
+          </select>
+          <span id="rd-count" class="muted-cell" style="font-size:12px;"></span>
+        </div>
+        <div class="panel" style="padding:0;">
+          <table class="app-table" id="rounds-table">
+            <thead><tr><th style="text-align:left;">Player</th><th style="text-align:left;">Tournament</th><th>Date</th><th style="text-align:left;">Course</th><th>Status</th><th>Score</th><th></th></tr></thead>
+            <tbody id="rounds-tbody"><tr><td colspan="7" class="ag-empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-teams" class="tabpane" style="display:none;">
+        <div id="teams-list">
+          <div class="panel" style="padding:0;">
+            <table class="app-table" id="teams-table">
+              <thead><tr><th style="text-align:left;">Team</th><th style="text-align:left;">Coach</th><th>Division</th><th>Players</th><th>Rounds</th><th>Status</th><th></th></tr></thead>
+              <tbody id="teams-tbody"><tr><td colspan="7" class="ag-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="team-detail" style="display:none;"></div>
+      </div>
+
+      <div class="modal-backdrop" id="round-modal">
+        <div class="modal">
+          <h3>Edit round <span id="rm-id" style="color:var(--muted);font-weight:500;"></span></h3>
+          <div id="rm-owner" style="font-size:12px;color:var(--muted);margin:-8px 0 12px;"></div>
+          <div class="fld"><label>Player name</label><input id="rm-player_name"></div>
+          <div class="fld"><label>Tournament</label><input id="rm-tournament"></div>
+          <div class="fld-row"><div class="fld"><label>Round #</label><input id="rm-round_num" type="number"></div>
+            <div class="fld"><label>Date</label><input id="rm-round_date" type="date"></div></div>
+          <div class="fld"><label>Course</label><input id="rm-course_name"></div>
+          <div class="fld-row"><div class="fld"><label>Official score</label><input id="rm-official_score" type="number"></div>
+            <div class="fld"><label>Entered score</label><input id="rm-entered_score" type="number"></div></div>
+          <div class="fld"><label>Status</label><select id="rm-status">
+            <option value="confirmed">confirmed</option><option value="stats_only">stats_only</option>
+            <option value="score_only">score_only</option><option value="conflict">conflict</option></select></div>
+          <div id="rm-msg" style="font-size:12px;margin:6px 0;"></div>
+          <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:8px;">
+            <button class="link-btn danger" onclick="deleteRoundFromModal()">Delete round</button>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-outline btn-sm" onclick="closeRoundModal()">Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick="saveRound()">Save</button></div>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 </div>
@@ -267,6 +365,148 @@ async function seedLeague(){
   }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error.'; }
   btn.disabled=false; btn.textContent=old;
 }
+</script>
+<script>
+// ── Admin console (Phase 1) ──
+function showTab(name){
+  document.querySelectorAll('.tabpane').forEach(p=>p.style.display='none');
+  var pane=document.getElementById('tab-'+name); if(pane) pane.style.display='';
+  document.querySelectorAll('#admin-tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+  if(name==='alerts') loadAlerts();
+  if(name==='rounds') loadRounds();
+  if(name==='teams') backToTeams(), loadTeams();
+}
+function aEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function aDate(d){ return d? String(d).slice(0,10) : '—'; }
+function aNum(v){ return (typeof v==='number' && isFinite(v)) ? v : (v!=null && v!=='' && !isNaN(parseFloat(v)) ? parseFloat(v) : null); }
+
+async function loadAlerts(){
+  const box=document.getElementById('alerts-body');
+  let d; try{ const r=await API.get('/api/admin/alerts'); d=r&&r.ok?await r.json():null; }catch{ d=null; }
+  if(!d){ box.innerHTML='<div class="ag-empty">Could not load alerts.</div>'; return; }
+  const c=d.counts||{};
+  const total=(+c.conflicts||0)+(+c.need_stats||0)+(+c.broken||0)+(+c.billing||0)+(+c.errors||0);
+  const pill=document.getElementById('pill-alerts'); if(pill){ pill.textContent=total; pill.classList.toggle('zero', total===0); }
+  function grp(title,icon,items,render){
+    const n=items?items.length:0;
+    let h=`<div class="alert-group"><div class="ag-head">${icon} ${title}<span class="ag-count">${n||'None'}</span></div>`;
+    if(!n) return h+'</div>';
+    return h+`<table class="app-table"><tbody>${items.map(render).join('')}</tbody></table></div>`;
+  }
+  box.innerHTML =
+    grp('Score conflicts','⚠️',d.conflicts,r=>`<tr>
+      <td style="text-align:left;"><strong>${aEsc(r.player)}</strong><div class="muted-cell" style="font-size:11px;">${aEsc(r.tournament||'')} · ${aDate(r.round_date)}</div></td>
+      <td>entered <strong>${r.entered_score??'—'}</strong> vs official <strong>${r.official_score??'—'}</strong></td>
+      <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="resolveConflict(${r.id},'official')">Keep official</button><button class="link-btn" onclick="resolveConflict(${r.id},'entered')">Keep entered</button><button class="link-btn" onclick="openRound(${r.id})">Edit</button></td></tr>`)
+    + grp('Rounds missing stats','📋',d.needStats,r=>`<tr>
+      <td style="text-align:left;"><strong>${aEsc(r.player)}</strong><div class="muted-cell" style="font-size:11px;">${aEsc(r.tournament||'')} · ${aDate(r.round_date)}</div></td>
+      <td>score ${r.official_score??'—'} · no stats yet</td>
+      <td style="text-align:right;"><button class="link-btn" onclick="openRound(${r.id})">Open</button></td></tr>`)
+    + grp('Broken round data','🧩',d.broken,r=>`<tr>
+      <td style="text-align:left;"><strong>${aEsc(r.player)}</strong><div class="muted-cell" style="font-size:11px;">${aEsc(r.tournament||'')} · ${aDate(r.round_date)}</div></td>
+      <td>no summary — won't render (${aEsc(r.status)})</td>
+      <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="openRound(${r.id})">Edit</button><button class="link-btn danger" onclick="deleteRound(${r.id})">Delete</button></td></tr>`)
+    + grp('Billing & roster','💳',[].concat((d.billing||[]).map(b=>({t:0,x:b})),(d.overCap||[]).map(o=>({t:1,x:o}))),row=>row.t===0
+        ? `<tr><td style="text-align:left;"><strong>${aEsc(row.x.name)}</strong> <span class="muted-cell" style="font-size:11px;">${aEsc(row.x.email)}</span></td><td>${aEsc(row.x.role)} · subscription ${aEsc(row.x.subscription_status)}</td><td></td></tr>`
+        : `<tr><td style="text-align:left;"><strong>${aEsc(row.x.name)}</strong></td><td>over seat cap: ${row.x.players}/${row.x.max_members}</td><td></td></tr>`)
+    + grp('App errors','🐞',d.errors,e=>`<tr>
+      <td style="text-align:left;"><strong>${aEsc(e.source)}</strong><div class="muted-cell" style="font-size:11px;">${aDate(e.created_at)}</div></td>
+      <td>${aEsc(e.message)}</td>
+      <td style="text-align:right;"><button class="link-btn" onclick="dismissError(${e.id})">Dismiss</button></td></tr>`);
+}
+async function resolveConflict(id,choice){ const r=await API.post(`/api/admin/rounds/${id}/resolve`,{choice}); if(r&&r.ok) loadAlerts(); }
+async function dismissError(id){ const r=await API.post(`/api/admin/errors/${id}/resolve`,{}); if(r&&r.ok) loadAlerts(); }
+
+let _rdT;
+function debouncedRounds(){ clearTimeout(_rdT); _rdT=setTimeout(loadRounds,300); }
+async function loadRounds(){
+  const q=encodeURIComponent(document.getElementById('rd-search').value||'');
+  const st=document.getElementById('rd-status').value||'';
+  const tb=document.getElementById('rounds-tbody'); tb.innerHTML='<tr><td colspan="7" class="ag-empty">Loading…</td></tr>';
+  let rows=[]; try{ const r=await API.get(`/api/admin/rounds?search=${q}&status=${st}&limit=200`); rows=r&&r.ok?await r.json():[]; }catch{ rows=[]; }
+  document.getElementById('rd-count').textContent=rows.length+' round'+(rows.length===1?'':'s');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="7" class="ag-empty">No rounds match.</td></tr>'; return; }
+  tb.innerHTML=rows.map(r=>`<tr>
+    <td style="text-align:left;"><strong>${aEsc(r.player)}</strong>${r.team?`<div class="muted-cell" style="font-size:11px;">${aEsc(r.team)}</div>`:''}</td>
+    <td style="text-align:left;">${aEsc(r.tournament||'—')} <span class="muted-cell">#${r.round_num||1}</span></td>
+    <td>${aDate(r.round_date)}</td><td style="text-align:left;">${aEsc(r.course_name||'—')}</td>
+    <td><span class="st ${aEsc(r.status||'')}">${aEsc(r.status||'—')}</span>${r.has_summary?'':' <span class="muted-cell" title="no summary">•</span>'}</td>
+    <td>${r.official_score??r.entered_score??'—'}</td>
+    <td style="text-align:right;white-space:nowrap;"><button class="link-btn" onclick="openRound(${r.id})">Edit</button><button class="link-btn danger" onclick="deleteRound(${r.id})">Delete</button></td></tr>`).join('');
+}
+
+let _editingRound=null;
+async function openRound(id){
+  let d; try{ const r=await API.get(`/api/admin/rounds/${id}`); d=r&&r.ok?await r.json():null; }catch{ d=null; }
+  if(!d){ alert('Could not load round.'); return; }
+  _editingRound=id;
+  document.getElementById('rm-id').textContent='#'+id;
+  document.getElementById('rm-owner').textContent='Owner: '+(d.player||'')+(d.email?(' · '+d.email):'');
+  const set=(k,v)=>{ const el=document.getElementById('rm-'+k); if(el) el.value=(v==null?'':v); };
+  set('player_name',d.player_name); set('tournament',d.tournament); set('round_num',d.round_num);
+  set('round_date',d.round_date?String(d.round_date).slice(0,10):''); set('course_name',d.course_name);
+  set('official_score',d.official_score); set('entered_score',d.entered_score); set('status',d.status||'confirmed');
+  document.getElementById('rm-msg').textContent='';
+  document.getElementById('round-modal').classList.add('show');
+}
+function closeRoundModal(){ document.getElementById('round-modal').classList.remove('show'); _editingRound=null; }
+async function saveRound(){
+  if(!_editingRound) return;
+  const g=k=>document.getElementById('rm-'+k).value;
+  const body={ player_name:g('player_name'), tournament:g('tournament'), round_num:g('round_num')||null,
+    round_date:g('round_date')||null, course_name:g('course_name'),
+    official_score:g('official_score')||null, entered_score:g('entered_score')||null, status:g('status') };
+  const msg=document.getElementById('rm-msg'); msg.style.color='var(--muted)'; msg.textContent='Saving…';
+  const r=await API.put(`/api/admin/rounds/${_editingRound}`,body); const d=r?await r.json():{};
+  if(r&&r.ok){ msg.style.color='var(--green-mid)'; msg.textContent='Saved.'; setTimeout(()=>{ closeRoundModal(); loadRounds(); loadAlerts(); },600); }
+  else { msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Save failed.'; }
+}
+async function deleteRoundFromModal(){ if(_editingRound && await deleteRound(_editingRound)) closeRoundModal(); }
+async function deleteRound(id){
+  if(!confirm('Delete round #'+id+'? This cannot be undone.')) return false;
+  const r=await API.del(`/api/admin/rounds/${id}`);
+  if(r&&r.ok){ loadRounds(); loadAlerts(); return true; }
+  alert('Delete failed.'); return false;
+}
+
+async function loadTeams(){
+  const tb=document.getElementById('teams-tbody'); tb.innerHTML='<tr><td colspan="7" class="ag-empty">Loading…</td></tr>';
+  let rows=[]; try{ const r=await API.get('/api/admin/teams'); rows=r&&r.ok?await r.json():[]; }catch{ rows=[]; }
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="7" class="ag-empty">No teams yet.</td></tr>'; return; }
+  tb.innerHTML=rows.map(t=>`<tr>
+    <td style="text-align:left;"><strong>${aEsc(t.name)}</strong></td>
+    <td style="text-align:left;">${aEsc(t.coach||'—')}<div class="muted-cell" style="font-size:11px;">${aEsc(t.coach_email||'')}</div></td>
+    <td>${aEsc(t.division||'—')}</td><td>${t.players}</td><td>${t.rounds}</td>
+    <td><span class="badge ${t.subscription_status==='active'?'active':'inactive'}">${aEsc(t.subscription_status||'—')}</span></td>
+    <td style="text-align:right;"><button class="link-btn" onclick="viewTeam(${t.id})">View as coach</button></td></tr>`).join('');
+}
+function playerAvg(rounds){
+  const vals=[]; rounds.forEach(r=>{ const s=r.summary||{}; const v=aNum(s.scoringAvg)??aNum(s.avgScore)??aNum(s.score)??aNum(s.total); if(v!=null) vals.push(v); });
+  if(!vals.length) return null; return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+async function viewTeam(id){
+  let d; try{ const r=await API.get(`/api/admin/teams/${id}`); d=r&&r.ok?await r.json():null; }catch{ d=null; }
+  if(!d){ alert('Could not load team.'); return; }
+  const players=(d.members||[]).filter(m=>m.role==='team_member');
+  const coach=(d.members||[]).find(m=>m.role==='team_admin');
+  const rounds=d.rounds||[]; const byP={}; rounds.forEach(r=>{ (byP[r.user_id]=byP[r.user_id]||[]).push(r); });
+  const roster=players.map(p=>{ const rs=byP[p.id]||[]; return {p,n:rs.length,avg:playerAvg(rs)}; })
+    .sort((a,b)=>(a.avg==null?1:0)-(b.avg==null?1:0)||((a.avg||0)-(b.avg||0)));
+  const rosterRows=roster.map((row,i)=>`<tr><td>${row.n?i+1:'–'}</td><td style="text-align:left;"><strong>${aEsc(row.p.name)}</strong></td><td>${row.n}</td><td>${row.avg==null?'—':row.avg.toFixed(1)}</td></tr>`).join('') || '<tr><td colspan="4" class="ag-empty">No players yet.</td></tr>';
+  const recent=rounds.slice(0,20).map(r=>{ const pl=players.find(p=>p.id===r.user_id); return `<tr><td style="text-align:left;">${aEsc(pl?pl.name:'—')}</td><td style="text-align:left;">${aEsc(r.tournament||'—')}</td><td>${aDate(r.round_date)}</td><td style="text-align:left;">${aEsc(r.course_name||'—')}</td><td><span class="st ${aEsc(r.status||'')}">${aEsc(r.status||'—')}</span></td></tr>`; }).join('') || '<tr><td colspan="5" class="ag-empty">No rounds yet.</td></tr>';
+  const box=document.getElementById('team-detail');
+  box.innerHTML=`<button class="link-btn" onclick="backToTeams()">← All teams</button>
+    <div class="page-title" style="margin-top:6px;">${aEsc(d.team.name)} <span class="muted-cell" style="font-size:13px;font-weight:500;">(read-only coach view)</span></div>
+    <div class="page-sub">${aEsc(d.team.division||'')}${d.team.conference?(' · '+aEsc(d.team.conference)):''} · Coach: ${aEsc(coach?coach.name:'—')} · ${players.length} players</div>
+    <div class="panel" style="padding:0;"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;color:var(--green-dark);font-size:14px;">Roster</div>
+      <table class="app-table"><thead><tr><th>#</th><th style="text-align:left;">Player</th><th>Rounds</th><th>Avg</th></tr></thead><tbody>${rosterRows}</tbody></table></div>
+    <div class="panel" style="padding:0;"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;color:var(--green-dark);font-size:14px;">Recent team rounds</div>
+      <table class="app-table"><thead><tr><th style="text-align:left;">Player</th><th style="text-align:left;">Tournament</th><th>Date</th><th style="text-align:left;">Course</th><th>Status</th></tr></thead><tbody>${recent}</tbody></table></div>`;
+  document.getElementById('teams-list').style.display='none'; box.style.display='';
+}
+function backToTeams(){ const b=document.getElementById('team-detail'); if(b){ b.style.display='none'; } const l=document.getElementById('teams-list'); if(l) l.style.display=''; }
+
+loadAlerts(); // populate the Alerts tab badge on load
 </script>
 </body>
 </html>
