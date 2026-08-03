@@ -1,6 +1,8 @@
-# Stat Caddie — Web App
+# College Golf Metrics — Web App
 
-Full-stack golf statistics platform with user authentication, Stripe subscriptions (Individual & Team), and server-side round storage.
+Full-stack college golf statistics platform: tournament-style round capture, team dashboards, national statistical rankings & leaderboards, and one-click PDF reports. Includes user authentication, Stripe Team subscriptions, and server-side round storage.
+
+> Formerly "Stat Caddie." Part of the D3 Golf Guys brand — **CollegeGolfMetrics.com**.
 
 ---
 
@@ -10,7 +12,7 @@ Full-stack golf statistics platform with user authentication, Stripe subscriptio
 - **Database:** PostgreSQL (hosted on Railway)
 - **Auth:** JWT in httpOnly cookies + bcrypt
 - **Payments:** Stripe Subscriptions + Webhook
-- **Frontend:** Vanilla HTML/CSS/JS
+- **Frontend:** Vanilla HTML/CSS/JS (client-side jsPDF for reports)
 - **Hosting:** Railway (recommended)
 
 ---
@@ -41,16 +43,15 @@ Edit `.env` with your values:
 | `STRIPE_SECRET_KEY` | From Stripe Dashboard → API keys |
 | `STRIPE_PUBLISHABLE_KEY` | From Stripe Dashboard → API keys |
 | `STRIPE_WEBHOOK_SECRET` | From Stripe → Webhooks (see step 4) |
-| `STRIPE_INDIVIDUAL_PRICE_ID` | Price ID for Individual plan |
-| `STRIPE_TEAM_PRICE_ID` | Price ID for Team plan |
+| `STRIPE_TEAM_PRICE_ID` | Price ID for the Team plan |
+| `GOLF_COURSE_API_KEY` | GolfCourseAPI key — pre-fills par/HCP/yardage on capture |
 | `APP_URL` | `http://localhost:3000` for dev |
 
 ### 4. Set up Stripe
 
 1. Log in to [dashboard.stripe.com](https://dashboard.stripe.com)
-2. Go to **Products** → Create two products:
-   - **Stat Caddie Individual** — $9.99/month recurring → copy the Price ID
-   - **Stat Caddie Team** — $29.99/month recurring → copy the Price ID
+2. Go to **Products** → Create the product:
+   - **College Golf Metrics Team** — $29.99/month recurring → copy the Price ID into `STRIPE_TEAM_PRICE_ID`
 3. Go to **Webhooks** → Add endpoint: `https://your-domain.com/api/subscriptions/webhook`
    - Events to listen for:
      - `checkout.session.completed`
@@ -83,7 +84,7 @@ Railway is the recommended host — it provides Node.js hosting + PostgreSQL in 
 2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
 3. Add a **PostgreSQL** plugin to your project (Railway does this in one click)
 4. Set all environment variables in Railway's **Variables** tab
-5. Set `APP_URL` to your Railway public URL (e.g. `https://statcaddie.up.railway.app`)
+5. Set `APP_URL` to your Railway public URL (e.g. `https://collegegolfmetrics.up.railway.app`)
 6. Railway auto-detects Node.js and runs `npm start`
 
 The database schema is created automatically on first boot.
@@ -103,15 +104,31 @@ webapp/
 │   ├── auth.js                # Register, login, logout, me, accept-invite
 │   ├── subscriptions.js       # Stripe checkout, webhook, billing portal
 │   ├── rounds.js              # Round CRUD API
-│   └── teams.js               # Team management API
+│   ├── teams.js               # Team management + team rounds/scoring
+│   ├── courses.js             # Course lookup + par/HCP/yardage pre-fill
+│   ├── rankings.js            # Metric registry + national/division leaderboards
+│   ├── schools.js             # Schools reference (division/conference/region)
+│   ├── scoreboard.js          # Clippd Scoreboard catalog ingest
+│   └── admin.js               # Owner-only platform stats + demo seeding
+├── services/
+│   ├── stats.js               # Season stat computation + metric values
+│   ├── rankings.js            # Ranking engine (players & teams, percentiles)
+│   ├── metrics.js             # Canonical metric registry
+│   ├── catalog.js             # Scoreboard catalog ingester
+│   ├── scoreboard.js          # Scoreboard API client
+│   ├── courses.js             # GolfCourseAPI client
+│   ├── schools.js             # Schools reference loader
+│   ├── demoSeed.js            # Demo team / league seeder
+│   └── reconcile.js           # Data reconciliation helpers
 ├── middleware/
 │   ├── requireAuth.js         # JWT verification
 │   └── requireSubscription.js # Active subscription check
 └── public/                    # Static frontend
     ├── index.html             # Marketing landing page
     ├── login.html
-    ├── register.html
+    ├── register.html          # Team (coach) signup
     ├── accept-invite.html     # Team invitation acceptance
+    ├── leaderboard.html       # Public national leaderboards
     ├── css/
     │   ├── main.css           # Shared styles
     │   └── app.css            # App shell styles
@@ -122,19 +139,29 @@ webapp/
         ├── index.html         # App home dashboard
         ├── capture.html       # Desktop round capture
         ├── mobile.html        # Mobile round capture
-        ├── reports.html       # Stats reports & charts
-        ├── team.html          # Team management (admin only)
+        ├── reports.html       # Stats reports, charts & PDF export
+        ├── course-history.html# Per-course hole-by-hole history
+        ├── leaderboard.html   # In-app rankings & leaderboards
+        ├── team.html          # Team dashboard (coach only)
+        ├── admin.html         # Owner-only platform stats / seeding
         └── account.html       # Account & billing settings
 ```
 
 ---
 
-## Subscription Plans
+## Subscription Plan
 
 | Plan | Price | Players | Features |
 |---|---|---|---|
-| Individual | $9.99/mo | 1 | All capture & reporting tools |
-| Team | $29.99/mo | Up to 15 | Individual features + team roster, aggregate reports, player invitations |
+| Team | $29.99/mo | Up to 15 | Full player capture & reporting, team dashboard with drop-the-high scoring, course history, national rankings & leaderboards, roster management & invites, one-click player & team PDF reports |
+
+Signup is team-only: coaches create the account and invite players to join their roster.
+
+---
+
+## Rankings & Leaderboards
+
+Rankings are computed **only from rounds entered in College Golf Metrics** — this is the platform's moat. The engine provisions one canonical player per app user (segmented by their team's division/conference/region/gender), computes each player's season stat profile, and ranks players and teams per metric within national and division cohorts. Standings are available for the current season and career, split by men's and women's golf, with percentile badges. Rankings refresh nightly and are exposed both publicly (`/leaderboard.html`) and in-app.
 
 ---
 
@@ -154,8 +181,12 @@ webapp/
 | POST | `/api/rounds` | ✓ Sub | Create round |
 | GET | `/api/rounds/:id` | ✓ Sub | Get round + holes |
 | DELETE | `/api/rounds/:id` | ✓ Sub | Delete round |
+| GET | `/api/courses/search` | ✓ | Course lookup (par/HCP/yardage pre-fill) |
 | GET | `/api/teams/me` | ✓ | Team info + members |
 | PUT | `/api/teams/me` | ✓ Admin | Update team name |
 | POST | `/api/teams/invite` | ✓ Admin | Invite player by email |
 | DELETE | `/api/teams/members/:id` | ✓ Admin | Remove player |
-| GET | `/api/teams/rounds` | ✓ Admin | All team rounds |
+| GET | `/api/teams/rounds` | ✓ Admin | All team rounds + team scoring |
+| GET | `/api/rankings/metrics` | — | Metric registry for leaderboards |
+| GET | `/api/rankings/leaderboard` | — | Player/team rankings by metric, segment & gender |
+| GET | `/api/schools` | — | Schools reference (division/conference/region) |
