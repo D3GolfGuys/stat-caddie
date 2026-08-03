@@ -262,13 +262,18 @@ function buildRounds(player, seed) {
   const rnd = rng(seed);
   const rounds = [];
   const today = new Date();
+  // Anchor demo rounds inside the CURRENT academic year (season opens Aug 1) so
+  // they appear on the current-year-only leaderboard. Spread oldest->newest across
+  // however much of the season has elapsed; clamped so nothing predates the opener.
+  const seasonStart = new Date(today.getMonth() >= 7 ? today.getFullYear() : today.getFullYear() - 1, 7, 1);
+  const spanDays = Math.max(0, Math.round((today - seasonStart) / 86400000));
   for (let k = 0; k < 5; k++) {
     const meta = COURSES[k % COURSES.length];
     const holes = generateHoles(player, rnd);
     const summary = computeSummary(holes);
-    // Space the rounds out over the last ~10 weeks.
+    // k=0 oldest (near the opener), k=4 newest (near today), all within the season window.
     const d = new Date(today);
-    d.setDate(d.getDate() - (55 - k * 12) - Math.floor(rnd() * 4));
+    d.setDate(d.getDate() - (spanDays > 0 ? Math.round(spanDays * (4 - k) / 4) : 0));
     rounds.push({
       player_name: player.name,
       tournament: meta.tournament,
