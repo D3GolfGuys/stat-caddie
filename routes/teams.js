@@ -106,4 +106,63 @@ router.get('/rounds', requireTeamAdmin, async (req, res) => {
   res.json(rows);
 });
 
+
+// ── Course history (coach): performance over time + hole difficulty ──────────
+// GET /api/teams/courses — courses the team has played, with counts.
+router.get('/courses', requireTeamAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.course_name AS course, COUNT(DISTINCT r.id)::int AS rounds,
+              COUNT(DISTINCT r.tournament)::int AS events,
+              to_char(MIN(r.round_date),'YYYY-MM-DD') AS first_played,
+              to_char(MAX(r.round_date),'YYYY-MM-DD') AS last_played
+         FROM rounds r JOIN users u ON u.id = r.user_id
+        WHERE u.team_id = $1 AND u.role <> 'team_admin'
+          AND r.course_name IS NOT NULL AND r.course_name <> ''
+        GROUP BY r.course_name ORDER BY rounds DESC, r.course_name`, [req.user.team_id]);
+    res.json({ courses: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load courses' }); }
+});
+
+// GET /api/teams/course-holes?course= — per-hole difficulty across all team rounds there.
+router.get('/course-holes', requireTeamAdmin, async (req, res) => {
+  const course = req.query.course;
+  if (!course) return res.status(400).json({ error: 'course required' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT rh.hole_num, MAX(rh.par) AS par,
+              COUNT(rh.score)::int AS plays,
+              ROUND(AVG(rh.score)::numeric, 2) AS avg_score,
+              ROUND(AVG(rh.score - rh.par)::numeric, 2) AS avg_vs_par,
+              SUM(CASE WHEN rh.score - rh.par <= -1 THEN 1 ELSE 0 END)::int AS birdies,
+              SUM(CASE WHEN rh.score - rh.par = 0  THEN 1 ELSE 0 END)::int AS pars,
+              SUM(CASE WHEN rh.score - rh.par = 1  THEN 1 ELSE 0 END)::int AS bogeys,
+              SUM(CASE WHEN rh.score - rh.par >= 2 THEN 1 ELSE 0 END)::int AS doubles_plus
+         FROM round_holes rh
+         JOIN rounds r ON r.id = rh.round_id
+         JOIN users u ON u.id = r.user_id
+        WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.course_name = $2 AND rh.score IS NOT NULL
+        GROUP BY rh.hole_num ORDER BY rh.hole_num`, [req.user.team_id, course]);
+    res.json({ course, holes: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load hole history' }); }
+});
+
+// GET /api/teams/course-timeline?course= — team scoring per visit over time.
+router.get('/course-timeline', requireTeamAdmin, async (req, res) => {
+  const course = req.query.course;
+  if (!course) return res.status(400).json({ error: 'course required' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT to_char(r.round_date,'YYYY-MM-DD') AS date, r.tournament,
+              COUNT(r.id)::int AS rounds,
+              ROUND(AVG((r.summary->>'totalScore')::numeric), 1) AS avg_score,
+              ROUND(AVG((r.summary->>'vspar')::numeric), 1) AS avg_vs_par
+         FROM rounds r JOIN users u ON u.id = r.user_id
+        WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.course_name = $2
+          AND r.summary IS NOT NULL AND r.summary ? 'totalScore'
+        GROUP BY r.round_date, r.tournament ORDER BY r.round_date, r.tournament`, [req.user.team_id, course]);
+    res.json({ course, visits: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load course timeline' }); }
+});
+
 module.exports = router;

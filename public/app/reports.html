@@ -86,7 +86,11 @@
       <div id="rank-bar">
         <span style="color:var(--green-dark);font-weight:700;">&#9733; My Rankings</span>
         <span class="rk-sub" id="rank-summary">&hellip;</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto;" id="rank-toggle" onclick="toggleRankings()">Show</button>
+        <span id="rank-span-toggle" style="margin-left:auto;display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px;">
+          <button type="button" data-span="year" onclick="setRankSpan('year')" style="border:none;background:var(--green-mid);color:#fff;padding:3px 9px;cursor:pointer;font-weight:700;">This Year</button>
+          <button type="button" data-span="career" onclick="setRankSpan('career')" style="border:none;background:#fff;color:var(--muted);padding:3px 9px;cursor:pointer;font-weight:700;">Career</button>
+        </span>
+        <button class="btn btn-outline btn-sm" style="margin-left:8px;" id="rank-toggle" onclick="toggleRankings()">Show</button>
       </div>
       <div id="rank-panel"></div>
 
@@ -195,7 +199,7 @@ async function resolveConflict(id, choice){
 }
 
 // ── My Rankings (percentiles vs national / division / conference) ───────────
-let _rank = { rows: [], open: false };
+let _rank = { rows: [], open: false, span: 'year' };
 function pctClass(p){ if(p==null) return 'na'; if(p>=67) return 'hi'; if(p>=34) return 'mid'; return 'lo'; }
 function pctCell(seg){
   if(!seg) return '<span class="pct na">&mdash;</span>';
@@ -203,7 +207,7 @@ function pctCell(seg){
        + `<div class="rk-sub">#${seg.rank} of ${seg.cohort_n}</div>`;
 }
 async function loadRankings(){
-  try { const res = await API.get('/api/rankings/me'); _rank.rows = (res && res.ok) ? ((await res.json()).rankings || []) : []; }
+  try { const res = await API.get('/api/rankings/me?span=' + _rank.span); _rank.rows = (res && res.ok) ? ((await res.json()).rankings || []) : []; }
   catch { _rank.rows = []; }
   const s = document.getElementById('rank-summary');
   if(!_rank.rows.length){ s.textContent = 'No rankings yet — log a few rounds; rankings refresh nightly.'; }
@@ -213,6 +217,7 @@ async function loadRankings(){
   renderRankings();
 }
 function toggleRankings(){ _rank.open=!_rank.open; document.getElementById('rank-toggle').textContent=_rank.open?'Hide':'Show'; renderRankings(); }
+function setRankSpan(sp){ _rank.span=sp; document.querySelectorAll('#rank-span-toggle button').forEach(b=>{ const on=b.dataset.span===sp; b.style.background=on?'var(--green-mid)':'#fff'; b.style.color=on?'#fff':'var(--muted)'; }); loadRankings(); }
 function renderRankings(){
   const box=document.getElementById('rank-panel');
   if(!_rank.open){ box.style.display='none'; return; }

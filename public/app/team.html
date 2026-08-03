@@ -61,6 +61,7 @@
       <div class="sidebar-section">
         <div class="sidebar-label">Team</div>
         <a href="/app/team.html" class="sidebar-link active"><span class="icon">👥</span> Team Dashboard</a>
+        <a href="/app/course-history.html" class="sidebar-link"><span class="icon">📈</span> Course History</a>
         <a href="/app/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
       </div>
       <div class="sidebar-section">
@@ -160,7 +161,12 @@
 
       <!-- Team Rankings (national / division / conference percentiles) -->
       <div class="table-card" style="margin-bottom:16px;">
-        <div class="table-card-header"><h3>Team Rankings</h3><span id="tr-note" style="font-size:12px;color:var(--muted);"></span></div>
+        <div class="table-card-header"><h3>Team Rankings</h3>
+          <span id="tr-span" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:11px;margin-left:8px;">
+            <button type="button" data-span="year" onclick="setTeamSpan('year')" style="border:none;background:var(--green-mid);color:#fff;padding:3px 9px;cursor:pointer;font-weight:700;">This Year</button>
+            <button type="button" data-span="career" onclick="setTeamSpan('career')" style="border:none;background:#fff;color:var(--muted);padding:3px 9px;cursor:pointer;font-weight:700;">Career</button>
+          </span>
+          <span id="tr-note" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>
         <div id="team-rankings" style="overflow-x:auto;"><div class="empty-hint">Loading…</div></div>
       </div>
 
@@ -241,10 +247,12 @@ async function saveSettings(){
   if(r&&r.ok){ out.style.color='var(--green-mid)'; out.textContent='✅ Saved. Rankings use this on the next nightly refresh (or ask the admin to recompute).'; await load(); setTimeout(()=>{document.getElementById('settings-modal').style.display='none';},1400); }
   else { out.style.color='var(--red)'; out.textContent=(d&&d.error)||'Failed to save.'; }
 }
+let _teamSpan='year';
+function setTeamSpan(sp){ _teamSpan=sp; document.querySelectorAll('#tr-span button').forEach(b=>{ const on=b.dataset.span===sp; b.style.background=on?'var(--green-mid)':'#fff'; b.style.color=on?'#fff':'var(--muted)'; }); loadTeamRankings(); }
 async function loadTeamRankings(){
   const box=document.getElementById('team-rankings'), note=document.getElementById('tr-note');
   let rows=[];
-  try{ const r=await API.get('/api/rankings/team/me'); rows=(r&&r.ok)?((await r.json()).rankings||[]):[]; }catch{ rows=[]; }
+  try{ const r=await API.get('/api/rankings/team/me?span='+_teamSpan); rows=(r&&r.ok)?((await r.json()).rankings||[]):[]; }catch{ rows=[]; }
   if(!rows.length){ box.innerHTML='<div class="empty-hint">No team rankings yet — set your division in ⚙ Team Settings and log rounds. Rankings refresh nightly.</div>'; note.textContent=''; return; }
   const dv=rows.find(r=>r.segment_type==='division'); note.textContent = dv? 'Ranked in '+dv.segment_value : '';
   const byKey=new Map();

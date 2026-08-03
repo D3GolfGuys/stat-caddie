@@ -6,10 +6,10 @@ const rankings = require('../services/rankings');
 // GET /api/rankings/me — logged-in player's percentiles across segments.
 router.get('/me', requireAuth, async (req, res) => {
   try {
-    const seasonId = await rankings.getCurrentSeasonId(pool);
+    const seasonId = await rankings.getSeasonId(pool, req.query.span || 'year');
     if (!seasonId) return res.json({ season: null, rankings: [] });
     const rows = await rankings.getPlayerRankings(pool, req.user.id, seasonId);
-    res.json({ season: seasonId, rankings: rows });
+    res.json({ season: seasonId, span: req.query.span || 'year', rankings: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load rankings' }); }
 });
 
@@ -27,6 +27,7 @@ router.get('/leaderboard', async (req, res) => {
       segmentType: req.query.segment_type || 'national',
       segmentValue: req.query.segment_value || 'ALL',
       gender: req.query.gender || 'M',
+      span: req.query.span || 'year',
       limit: req.query.limit,
     };
     const isTeam = req.query.scope === 'team';
@@ -39,9 +40,9 @@ router.get('/leaderboard', async (req, res) => {
 router.get('/team/me', requireAuth, async (req, res) => {
   try {
     if (!req.user.team_id) return res.json({ season: null, rankings: [] });
-    const seasonId = await rankings.getCurrentSeasonId(pool);
+    const seasonId = await rankings.getSeasonId(pool, req.query.span || 'year');
     if (!seasonId) return res.json({ season: null, rankings: [] });
-    res.json({ season: seasonId, rankings: await rankings.getTeamRankings(pool, req.user.team_id, seasonId) });
+    res.json({ season: seasonId, span: req.query.span || 'year', rankings: await rankings.getTeamRankings(pool, req.user.team_id, seasonId) });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load team rankings' }); }
 });
 

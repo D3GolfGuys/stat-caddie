@@ -7,12 +7,29 @@
  */
 const { computeSeason, metricValues } = require('./stats');
 
-async function ensureSeason(db, label) {
-  await db.query(`UPDATE seasons SET is_current = FALSE WHERE is_current = TRUE`);
+async function ensureSeason(db, label, { isCurrent = false, startsOn = null } = {}) {
+  if (isCurrent) await db.query(`UPDATE seasons SET is_current = FALSE WHERE is_current = TRUE`);
   const { rows } = await db.query(
-    `INSERT INTO seasons (label, is_current) VALUES ($1, TRUE)
-     ON CONFLICT (label) DO UPDATE SET is_current = TRUE RETURNING id`, [label]);
+    `INSERT INTO seasons (label, is_current, starts_on) VALUES ($1, $2, $3)
+     ON CONFLICT (label) DO UPDATE SET is_current = EXCLUDED.is_current,
+       starts_on = COALESCE(EXCLUDED.starts_on, seasons.starts_on)
+     RETURNING id`, [label, isCurrent, startsOn]);
   return rows[0].id;
+}
+
+function currentSeason() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  const startYear = m >= 8 ? y : y - 1;
+  return { label: `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`, startDate: `${startYear}-08-01` };
+}
+
+async function getSeasonId(db, span) {
+  if (span === 'career') {
+    const r = await db.query(`SELECT id FROM seasons WHERE label = 'Career' ORDER BY id DESC LIMIT 1`);
+    return r.rows.length ? r.rows[0].id : null;
+  }
+  return getCurrentSeasonId(db);
 }
 
 async function getCurrentSeasonId(db) {
@@ -55,13 +72,15 @@ async function provisionPlayers(db, seasonId) {
   return map;
 }
 
-async function computeProfiles(db, seasonId, userToPlayer) {
+async function computeProfiles(db, seasonId, userToPlayer, opts = {}) {
   const mrows = (await db.query(`SELECT id, key FROM metrics`)).rows;
   const metricId = {}; mrows.forEach(m => (metricId[m.key] = m.id));
   let players = 0, upserts = 0;
   for (const userId of Object.keys(userToPlayer)) {
     const playerId = userToPlayer[userId];
-    const rounds = (await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1`, [userId])).rows;
+    const rounds = (opts.since
+      ? await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1 AND round_date >= $2`, [userId, opts.since])
+      : await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1`, [userId])).rows;
     if (!rounds.length) continue;
     const vals = metricValues(computeSeason(rounds));
     const sampleN = computeSeason(rounds).rounds;
@@ -120,15 +139,28 @@ async function computeRankings(db, seasonId) {
 }
 
 async function recompute(pool, opts = {}) {
-  const label = String(opts.seasonLabel || '').trim() || 'current';
-  const seasonId = await ensureSeason(pool, label);
-  const map = await provisionPlayers(pool, seasonId);
-  const prof = await computeProfiles(pool, seasonId, map);
-  const rank = await computeRankings(pool, seasonId);
-  const tprof = await computeTeamProfiles(pool, seasonId);
-  const trank = await computeTeamRankings(pool, seasonId);
-  return { seasonId, seasonLabel: label, players: Object.keys(map).length, profileUpserts: prof.upserts,
-    rankingsInserted: rank.inserted, teams: tprof.teams, teamProfileUpserts: tprof.upserts, teamRankingsInserted: trank.inserted };
+  const cs = currentSeason();
+  const yearLabel = (opts.seasonLabel && opts.seasonLabel !== 'current') ? String(opts.seasonLabel).trim() : cs.label;
+  const yearId = await ensureSeason(pool, yearLabel, { isCurrent: true, startsOn: cs.startDate });
+  const careerId = await ensureSeason(pool, 'Career', { isCurrent: false });
+
+  const map = await provisionPlayers(pool, yearId);
+  await provisionPlayers(pool, careerId);
+
+  const yp = await computeProfiles(pool, yearId, map, { since: cs.startDate });
+  const cp = await computeProfiles(pool, careerId, map, {});
+  const yr = await computeRankings(pool, yearId);
+  const cr = await computeRankings(pool, careerId);
+
+  const typ = await computeTeamProfiles(pool, yearId, { since: cs.startDate });
+  const tcp = await computeTeamProfiles(pool, careerId, {});
+  const tyr = await computeTeamRankings(pool, yearId);
+  const tcr = await computeTeamRankings(pool, careerId);
+
+  return { yearSeasonId: yearId, careerSeasonId: careerId, yearLabel,
+    players: Object.keys(map).length,
+    profileUpserts: yp.upserts + cp.upserts, rankingsInserted: yr.inserted + cr.inserted,
+    teamProfileUpserts: typ.upserts + tcp.upserts, teamRankingsInserted: tyr.inserted + tcr.inserted };
 }
 
 async function getPlayerRankings(db, userId, seasonId) {
@@ -142,8 +174,8 @@ async function getPlayerRankings(db, userId, seasonId) {
      ORDER BY m.sort_order ASC, r.segment_type ASC`, [userId, seasonId])).rows;
 }
 
-async function getLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', gender = 'M', limit = 25 } = {}) {
-  const seasonId = await getCurrentSeasonId(db);
+async function getLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', gender = 'M', span = 'year', limit = 25 } = {}) {
+  const seasonId = await getSeasonId(db, span);
   if (!seasonId || !metricKey) return [];
   return (await db.query(`
     SELECT cp.full_name AS player, ps.division, ps.conference, r.gender,
@@ -164,7 +196,7 @@ const TEAM_SEGMENTS = [
 ];
 
 // A team's profile = aggregate of its players' rounds (coaches excluded).
-async function computeTeamProfiles(db, seasonId) {
+async function computeTeamProfiles(db, seasonId, opts = {}) {
   const mrows = (await db.query(`SELECT id, key FROM metrics`)).rows;
   const metricId = {}; mrows.forEach(m => (metricId[m.key] = m.id));
   const teams = (await db.query(
@@ -173,10 +205,9 @@ async function computeTeamProfiles(db, seasonId) {
        JOIN rounds r ON r.user_id = u.id`)).rows;
   let count = 0, upserts = 0;
   for (const t of teams) {
-    const rounds = (await db.query(
-      `SELECT r.summary, r.tournament FROM rounds r
-         JOIN users u ON u.id = r.user_id
-        WHERE u.team_id = $1 AND u.role <> 'team_admin'`, [t.id])).rows;
+    const rounds = (opts.since
+      ? await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.round_date >= $2`, [t.id, opts.since])
+      : await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin'`, [t.id])).rows;
     if (!rounds.length) continue;
     const season = computeSeason(rounds);
     const vals = metricValues(season);
@@ -225,8 +256,8 @@ async function computeTeamRankings(db, seasonId) {
   return { inserted };
 }
 
-async function getTeamLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', gender = 'M', limit = 25 } = {}) {
-  const seasonId = await getCurrentSeasonId(db);
+async function getTeamLeaderboard(db, { metricKey, segmentType = 'national', segmentValue = 'ALL', gender = 'M', span = 'year', limit = 25 } = {}) {
+  const seasonId = await getSeasonId(db, span);
   if (!seasonId || !metricKey) return [];
   return (await db.query(`
     SELECT t.name AS team, t.division, t.conference, tr.gender,
@@ -255,6 +286,6 @@ async function listMetrics(db) {
        FROM metrics WHERE rankable ORDER BY sort_order ASC`)).rows;
 }
 
-module.exports = { recompute, getCurrentSeasonId, getPlayerRankings, getLeaderboard, listMetrics,
+module.exports = { recompute, getCurrentSeasonId, getSeasonId, getPlayerRankings, getLeaderboard, listMetrics,
   getTeamLeaderboard, getTeamRankings,
   ensureSeason, provisionPlayers, computeProfiles, computeRankings, computeTeamProfiles, computeTeamRankings };

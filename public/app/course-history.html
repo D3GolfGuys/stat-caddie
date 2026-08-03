@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Course History — College Golf Metrics</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .ch-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 6px}
+  .ch-controls select{padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:14px;color:var(--green-dark);min-width:280px}
+  .ch-summary{font-size:13px;color:var(--muted);margin:2px 0 12px}
+  .tough{background:#fbf4dd;border:1px solid #ecdca0;color:#7a5f00;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+  .ch-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .ch-table th{background:#f4f7f5;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px}
+  .ch-table td{padding:9px 12px;border-top:1px solid #eef3ef;font-size:13.5px}
+  .ch-table tr.tough-row td{background:#fbefe9}
+  .over{color:#c0392b;font-weight:700}.under{color:#1f7a44;font-weight:700}
+  .mix{font-size:10px;color:var(--muted);margin-top:3px}
+  .empty-hint{text-align:center;padding:22px;color:#aaa}
+  h3.sec{font-size:14px;color:var(--green-dark);margin:20px 0 8px}
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ College Golf <span>Metrics</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link"><span class="icon">👥</span> Team Dashboard</a>
+        <a href="/app/course-history.html" class="sidebar-link active"><span class="icon">📈</span> Course History</a>
+        <a href="/app/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+    <main id="app-main">
+      <div class="page-title">Course History</div>
+      <div class="page-sub">Your team's performance at each course over time, and which holes play the toughest.</div>
+      <div class="ch-controls">
+        <select id="course"><option>Loading…</option></select>
+      </div>
+      <div class="ch-summary" id="ch-summary"></div>
+      <div class="tough" id="tough" style="display:none;"></div>
+
+      <h3 class="sec">Hole-by-hole difficulty</h3>
+      <div id="holes"><div class="empty-hint">Loading…</div></div>
+
+      <h3 class="sec">Performance over time</h3>
+      <div id="timeline"><div class="empty-hint">Loading…</div></div>
+    </main>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>
+let COURSES=[], CUR='';
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function vsFmt(v){ v=Number(v); if(isNaN(v)) return '—'; const r=Math.round(v*100)/100; return r>0?'+'+r:(r===0?'E':''+r); }
+async function loadCourses(){
+  const r=await API.get('/api/teams/courses'); const d=(r&&r.ok)?await r.json():{courses:[]}; COURSES=d.courses||[];
+  const sel=document.getElementById('course');
+  if(!COURSES.length){ sel.innerHTML='<option>No courses yet</option>';
+    document.getElementById('holes').innerHTML='<div class="empty-hint">No course history yet — enter rounds with a course name to build it.</div>';
+    document.getElementById('timeline').innerHTML=''; return; }
+  sel.innerHTML=COURSES.map(c=>`<option value="${esc(c.course)}">${esc(c.course)} — ${c.rounds} rounds, ${c.events} events</option>`).join('');
+  CUR=COURSES[0].course; sel.value=CUR; load();
+}
+async function load(){
+  CUR=document.getElementById('course').value;
+  const meta=COURSES.find(c=>c.course===CUR)||{};
+  document.getElementById('ch-summary').textContent = meta.course? `${meta.rounds} rounds · ${meta.events} events · ${meta.first_played||'?'} → ${meta.last_played||'?'}` : '';
+  const [hR,tR]=await Promise.all([
+    API.get('/api/teams/course-holes?course='+encodeURIComponent(CUR)),
+    API.get('/api/teams/course-timeline?course='+encodeURIComponent(CUR)),
+  ]);
+  renderHoles((hR&&hR.ok)?((await hR.json()).holes||[]):[]);
+  renderTimeline((tR&&tR.ok)?((await tR.json()).visits||[]):[]);
+}
+function renderHoles(holes){
+  const box=document.getElementById('holes'), tough=document.getElementById('tough');
+  if(!holes.length){ box.innerHTML='<div class="empty-hint">No hole-by-hole data for this course yet.</div>'; tough.style.display='none'; return; }
+  const sorted=[...holes].sort((a,b)=>Number(b.avg_vs_par)-Number(a.avg_vs_par));
+  const worst=new Set(sorted.slice(0,3).map(h=>h.hole_num));
+  tough.style.display='block';
+  tough.innerHTML='<strong>Toughest holes:</strong> '+sorted.slice(0,3).map(h=>`#${h.hole_num} (par ${h.par}, ${vsFmt(h.avg_vs_par)})`).join('   ·   ');
+  const maxAbs=Math.max(0.5, ...holes.map(h=>Math.abs(Number(h.avg_vs_par))));
+  box.innerHTML='<table class="ch-table"><thead><tr><th>Hole</th><th>Par</th><th>Plays</th><th>Avg</th><th>vs Par</th><th>Scoring mix (B/P/Bo/Db+)</th></tr></thead><tbody>'+
+    holes.map(h=>{ const vp=Number(h.avg_vs_par); const w=Math.min(50,Math.abs(vp)/maxAbs*50);
+      const bar='<div style="height:8px;border-radius:4px;background:#eef3ef;position:relative;margin-bottom:2px;"><div style="position:absolute;'+(vp>=0?'left:50%':'right:50%')+';width:'+w+'%;height:8px;border-radius:4px;background:'+(vp>0?'#c0392b':'#1f7a44')+';"></div></div>';
+      return `<tr class="${worst.has(h.hole_num)?'tough-row':''}"><td><strong>${h.hole_num}</strong></td><td>${h.par}</td><td>${h.plays}</td><td>${h.avg_score}</td><td class="${vp>0?'over':vp<0?'under':''}">${vsFmt(h.avg_vs_par)}</td><td style="min-width:150px;">${bar}<div class="mix">${h.birdies} / ${h.pars} / ${h.bogeys} / ${h.doubles_plus}</div></td></tr>`;
+    }).join('')+'</tbody></table>';
+}
+function renderTimeline(visits){
+  const box=document.getElementById('timeline');
+  if(!visits.length){ box.innerHTML='<div class="empty-hint">No visits recorded.</div>'; return; }
+  box.innerHTML='<table class="ch-table"><thead><tr><th>Date</th><th>Event</th><th>Rounds</th><th>Avg Score</th><th>vs Par</th></tr></thead><tbody>'+
+    visits.map(v=>`<tr><td>${v.date||'—'}</td><td>${esc(v.tournament||'—')}</td><td>${v.rounds}</td><td><strong>${v.avg_score==null?'—':v.avg_score}</strong></td><td class="${Number(v.avg_vs_par)>0?'over':Number(v.avg_vs_par)<0?'under':''}">${vsFmt(v.avg_vs_par)}</td></tr>`).join('')+'</tbody></table>';
+}
+document.getElementById('course').addEventListener('change',load);
+(async()=>{ const user=await initApp(); if(!user) return;
+  if(user.role!=='team_admin'){ document.getElementById('app-main').innerHTML='<div class="page-title">Coaches only</div><p style="color:var(--muted);margin-top:8px;">Course history is a coach view. <a href="/app/index.html">Back to your dashboard →</a></p>'; return; }
+  await loadCourses();
+})();
+</script>
+</body>
+</html>

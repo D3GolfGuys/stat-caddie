@@ -373,11 +373,11 @@ async function seedTeam(pool) {
     const { rows: tExist } = await client.query('SELECT id FROM teams WHERE admin_user_id=$1', [coachId]);
     if (tExist.length) {
       teamId = tExist[0].id;
-      await client.query(`UPDATE teams SET name=$1, subscription_status='active', max_members=15 WHERE id=$2`, [DEMO_TEAM_NAME, teamId]);
+      await client.query(`UPDATE teams SET name=$1, subscription_status='active', max_members=15, division='D3', conference='SCAC', gender='M', school_name='Demo University' WHERE id=$2`, [DEMO_TEAM_NAME, teamId]);
     } else {
       const { rows: tRows } = await client.query(
-        `INSERT INTO teams (name, admin_user_id, subscription_status, max_members)
-         VALUES ($1,$2,'active',15) RETURNING id`,
+        `INSERT INTO teams (name, admin_user_id, subscription_status, max_members, division, conference, gender, school_name)
+         VALUES ($1,$2,'active',15,'D3','SCAC','M','Demo University') RETURNING id`,
         [DEMO_TEAM_NAME, coachId]
       );
       teamId = tRows[0].id;
