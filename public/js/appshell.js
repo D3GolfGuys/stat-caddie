@@ -45,3 +45,48 @@ async function initApp(opts = {}) {
 
   return user;
 }
+
+// Mobile navigation: inject a hamburger toggle + overlay so the sidebar is
+// reachable on phones (on <=768px the sidebar is an off-canvas drawer).
+// Runs on every page that loads this script, independent of auth/initApp.
+(function () {
+  function setupMobileNav() {
+    var nav = document.getElementById('app-nav');
+    var sidebar = document.getElementById('sidebar');
+    if (!nav || !sidebar || document.getElementById('nav-hamburger')) return;
+
+    var btn = document.createElement('button');
+    btn.id = 'nav-hamburger';
+    btn.className = 'nav-hamburger';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Menu');
+    btn.innerHTML = '☰'; // ☰
+    nav.insertBefore(btn, nav.firstChild);
+
+    var overlay = document.createElement('div');
+    overlay.className = 'sidebar-overlay';
+    document.body.appendChild(overlay);
+
+    function close() {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('show');
+    }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = sidebar.classList.toggle('open');
+      overlay.classList.toggle('show', open);
+    });
+    overlay.addEventListener('click', close);
+    // Close the drawer after tapping any nav link (event delegation covers
+    // links injected later, e.g. the owner-only Admin link).
+    sidebar.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('.sidebar-link')) close();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupMobileNav);
+  } else {
+    setupMobileNav();
+  }
+})();
