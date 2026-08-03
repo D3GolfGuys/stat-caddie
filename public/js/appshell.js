@@ -55,6 +55,17 @@ async function initApp(opts = {}) {
     var sidebar = document.getElementById('sidebar');
     if (!nav || !sidebar || document.getElementById('nav-hamburger')) return;
 
+    // Support link at the bottom of the sidebar (shows on every app page + mobile drawer).
+    if (!document.getElementById('sidebar-support')) {
+      var sup = document.createElement('div');
+      sup.className = 'sidebar-section';
+      sup.id = 'sidebar-support';
+      sup.innerHTML = '<div class="sidebar-label">Support</div>' +
+        '<a href="mailto:admin@collegegolfmetrics.com" class="sidebar-link">' +
+        '<span class="icon">\u2709\uFE0F</span> Need help?</a>';
+      sidebar.appendChild(sup);
+    }
+
     var btn = document.createElement('button');
     btn.id = 'nav-hamburger';
     btn.className = 'nav-hamburger';
