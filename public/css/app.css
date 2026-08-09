@@ -41,6 +41,15 @@ body { margin:0; background:#f0f4f0; font-family:-apple-system,BlinkMacSystemFon
 .sidebar-link.active { background:#e8f4e8; color: var(--green-dark); font-weight:700; }
 .sidebar-link .icon { font-size:16px; width:20px; text-align:center; }
 
+/* Role-aware nav: on pages that carry role-specific sections (player Tools vs.
+   coach Team), keep the sidebar invisible until appshell.js has resolved the
+   user's role and marked the shell .nav-ready. visibility (not display) keeps
+   the 200px column reserved, so nothing shifts — the correct sidebar simply
+   appears in one step instead of flashing the wrong one and swapping. Pages
+   whose sidebar has no role-conditional sections are unaffected. */
+#sidebar:has(.player-only), #sidebar:has(.team-admin-only) { visibility:hidden; }
+#app-shell.nav-ready #sidebar { visibility:visible; }
+
 /* Main content */
 #app-main { flex:1; padding:24px; overflow-x:hidden; max-width:1200px; }
 .page-title { font-size:22px; font-weight:800; color: var(--green-dark); margin-bottom:4px; }

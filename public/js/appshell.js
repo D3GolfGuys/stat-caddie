@@ -26,6 +26,12 @@ async function initApp(opts = {}) {
     document.querySelectorAll('.player-only').forEach(el => el.style.display = 'none');
   }
 
+  // Now that the role-specific nav has been resolved, reveal the sidebar.
+  // On pages with role-conditional sections the sidebar starts hidden (see
+  // app.css) so the correct one paints in a single step — no flash/swap.
+  const shell = document.getElementById('app-shell');
+  if (shell) shell.classList.add('nav-ready');
+
   // Owner-only: inject an Admin link into the sidebar on every page.
   if (user.isAdmin) {
     const sidebar = document.getElementById('sidebar');
