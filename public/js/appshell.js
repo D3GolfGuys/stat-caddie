@@ -49,6 +49,23 @@ async function initApp(opts = {}) {
     }
   }
 
+  // Team users (coaches + players): inject a Qualifying link.
+  if (user.team_id) {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && !document.getElementById('qualifying-nav-link')) {
+      const section = document.createElement('div');
+      section.className = 'sidebar-section';
+      section.innerHTML =
+        '<div class="sidebar-label">Compete</div>' +
+        '<a href="/app/qualifying.html" id="qualifying-nav-link" class="sidebar-link">' +
+        '<span class="icon">\uD83C\uDFAF</span> Qualifying</a>';
+      sidebar.appendChild(section);
+      if (window.location.pathname === '/app/qualifying.html') {
+        section.querySelector('.sidebar-link').classList.add('active');
+      }
+    }
+  }
+
   return user;
 }
 

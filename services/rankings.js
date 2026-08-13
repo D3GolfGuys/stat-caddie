@@ -79,8 +79,8 @@ async function computeProfiles(db, seasonId, userToPlayer, opts = {}) {
   for (const userId of Object.keys(userToPlayer)) {
     const playerId = userToPlayer[userId];
     const rounds = (opts.since
-      ? await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1 AND round_date >= $2`, [userId, opts.since])
-      : await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1`, [userId])).rows;
+      ? await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1 AND round_date >= $2 AND COALESCE(context,'casual') <> 'practice'`, [userId, opts.since])
+      : await db.query(`SELECT summary, tournament FROM rounds WHERE user_id = $1 AND COALESCE(context,'casual') <> 'practice'`, [userId])).rows;
     if (!rounds.length) continue;
     const vals = metricValues(computeSeason(rounds));
     const sampleN = computeSeason(rounds).rounds;
@@ -206,8 +206,8 @@ async function computeTeamProfiles(db, seasonId, opts = {}) {
   let count = 0, upserts = 0;
   for (const t of teams) {
     const rounds = (opts.since
-      ? await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.round_date >= $2`, [t.id, opts.since])
-      : await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin'`, [t.id])).rows;
+      ? await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.round_date >= $2 AND COALESCE(r.context,'casual') <> 'practice'`, [t.id, opts.since])
+      : await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin' AND COALESCE(r.context,'casual') <> 'practice'`, [t.id])).rows;
     if (!rounds.length) continue;
     const season = computeSeason(rounds);
     const vals = metricValues(season);

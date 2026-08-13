@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qualifying — College Golf Metrics</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .qcreate{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:6px 0 18px}
+  .qcreate h3{margin:0 0 12px;font-size:15px;color:var(--green-dark)}
+  .qform{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .qf{display:flex;flex-direction:column;gap:4px}
+  .qf label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+  .qf input,.qf select{padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:14px;color:var(--green-dark)}
+  .qf input[type=text]{min-width:200px}
+  .qcard{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+  .qcard.sel{border-color:var(--green-mid);box-shadow:0 0 0 2px rgba(45,120,80,.12)}
+  .qcard-main{flex:1;cursor:pointer;min-width:0}
+  .qcard-title{font-weight:700;color:var(--green-dark);font-size:15px}
+  .qcard-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .qcard-actions{display:flex;gap:8px}
+  .qbadge{display:inline-block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:10px;vertical-align:middle}
+  .qbadge.open{background:#e6f6ec;color:#0a7d3c}.qbadge.closed{background:#eef0f2;color:#69747d}
+  table.lb{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:12px}
+  table.lb th{background:#f4f7f5;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:10px 14px}
+  table.lb td{padding:10px 14px;border-top:1px solid #eef3ef;font-size:14px}
+  .rk{font-weight:800;color:var(--green-dark);width:52px}.rk.top{color:var(--gold)}
+  .val{font-weight:800;color:var(--green-dark)}
+  .muted{color:var(--muted);font-size:12px;font-weight:600}
+  .empty{text-align:center;color:#98a49c;padding:34px 12px}
+  #standings{margin-top:22px}
+  .sect-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .sect-title{font-size:16px;font-weight:800;color:var(--green-dark)}
+  .sect-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .enroll-box{margin-top:16px;background:#fafbfa;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:5px 12px;cursor:pointer;background:#fff;color:var(--green-dark)}
+  .chip.on{background:#e6f6ec;border-color:#bfe0cd}
+  .note{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="app-shell">
+  <nav id="app-nav">
+    <a href="/app/index.html" class="nav-logo">⛳ College Golf <span>Metrics</span></a>
+    <div id="nav-user">
+      <span class="user-name" id="nav-user-name"></span>
+      <a href="/app/account.html" class="nav-icon-btn">⚙ Account</a>
+      <button class="nav-icon-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+  <div id="app-body">
+    <div id="sidebar">
+      <div class="sidebar-section player-only">
+        <div class="sidebar-label">Tools</div>
+        <a href="/app/capture.html" class="sidebar-link"><span class="icon">🖥️</span> Desktop Capture</a>
+        <a href="/app/mobile.html"  class="sidebar-link"><span class="icon">📱</span> Mobile Capture</a>
+        <a href="/app/reports.html" class="sidebar-link"><span class="icon">📊</span> Stats Reports</a>
+        <a href="/app/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
+      </div>
+      <div class="sidebar-section team-admin-only" style="display:none;">
+        <div class="sidebar-label">Team</div>
+        <a href="/app/team.html" class="sidebar-link"><span class="icon">👥</span> Team Dashboard</a>
+        <a href="/app/course-history.html" class="sidebar-link"><span class="icon">📈</span> Course History</a>
+        <a href="/app/leaderboard.html" class="sidebar-link"><span class="icon">🏆</span> Leaderboards</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Compete</div>
+        <a href="/app/qualifying.html" id="qualifying-nav-link" class="sidebar-link active"><span class="icon">🎯</span> Qualifying</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <a href="/app/account.html" class="sidebar-link"><span class="icon">👤</span> My Account</a>
+      </div>
+    </div>
+    <main id="app-main">
+      <div class="page-title">Qualifying</div>
+      <div class="page-sub">Run intra-squad qualifying as a fair, normalized-to-par competition. Every qualifying round also builds each player's season stats and rankings.</div>
+
+      <div id="no-team" class="empty" style="display:none;">Qualifying is a team feature — it's available to college programs with a coach account.</div>
+
+      <div id="content">
+        <div class="qcreate" id="create-card" style="display:none;">
+          <h3>Create a qualifier</h3>
+          <div class="qform">
+            <div class="qf"><label>Name</label><input type="text" id="q-name" placeholder="e.g. Spring Qualifier — Week 3"></div>
+            <div class="qf"><label>Scoring</label>
+              <select id="q-scoring">
+                <option value="cumulative_to_par">Cumulative to par</option>
+                <option value="average_to_par">Average to par</option>
+              </select></div>
+            <div class="qf"><label>Drop worst</label>
+              <select id="q-drop"><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></div>
+            <div class="qf"><label>Start (optional)</label><input type="date" id="q-start"></div>
+            <div class="qf"><label>End (optional)</label><input type="date" id="q-end"></div>
+            <button class="btn btn-primary" onclick="createEvent()">Create</button>
+          </div>
+        </div>
+
+        <div id="events"><div class="empty">Loading…</div></div>
+        <div id="standings" style="display:none;"></div>
+
+        <div class="note">Standings are scored to par (a 74 on a hard course and a 70 on an easy one compare fairly by par). Practice rounds never count toward national rankings; qualifying and tournament rounds do. Rating-adjusted scoring and the practice-vs-tournament breakdown arrive in the next version.</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/appshell.js"></script>
+<script>
+let ME=null, EVENTS=[], CUR=null;
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function isCoach(){ return ME && ME.role==='team_admin'; }
+function fmtToPar(v){ if(v==null) return '—'; const n=Number(v); if(n===0) return 'E'; const t=Number.isInteger(n)?String(n):n.toFixed(1); return n>0?('+'+t):t; }
+function fmtDate(s){ try{ return new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(_){ return ''; } }
+function scoringLabel(cfg){ cfg=cfg||{}; let s=cfg.scoring==='average_to_par'?'Average to par':'Cumulative to par'; if(cfg.countBest) s+=', best '+cfg.countBest; else if(cfg.dropWorst) s+=', drop worst '+cfg.dropWorst; return s; }
+function statusBadge(st){ return `<span class="qbadge ${st==='open'?'open':'closed'}">${esc(st)}</span>`; }
+
+async function loadEvents(){
+  const r=await API.get('/api/qualifying'); const data=r?await r.json():{events:[]}; EVENTS=data.events||[];
+  const wrap=document.getElementById('events');
+  if(!EVENTS.length){ wrap.innerHTML='<div class="empty">No qualifiers yet.'+(isCoach()?' Create one above.':' Your coach hasn\'t set one up yet.')+'</div>'; return; }
+  wrap.innerHTML=EVENTS.map(e=>`
+    <div class="qcard ${CUR==e.id?'sel':''}">
+      <div class="qcard-main" onclick="viewStandings(${e.id})">
+        <div class="qcard-title">${esc(e.name)} ${statusBadge(e.status)}</div>
+        <div class="qcard-meta">${esc(scoringLabel(e.config))} · ${e.participants} player${e.participants==1?'':'s'} · ${e.rounds_logged} round${e.rounds_logged==1?'':'s'} logged${e.starts_on?' · from '+fmtDate(e.starts_on):''}</div>
+      </div>
+      <div class="qcard-actions">
+        <button class="btn btn-outline btn-sm" onclick="viewStandings(${e.id})">Standings</button>
+        ${isCoach()?`<button class="btn btn-outline btn-sm" onclick="toggleStatus(${e.id},'${e.status==='open'?'closed':'open'}')">${e.status==='open'?'Close':'Reopen'}</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function createEvent(){
+  const name=document.getElementById('q-name').value.trim();
+  if(!name){ alert('Give the qualifier a name.'); return; }
+  const config={ scoring:document.getElementById('q-scoring').value, dropWorst:parseInt(document.getElementById('q-drop').value)||0 };
+  const body={ name, startsOn:document.getElementById('q-start').value||null, endsOn:document.getElementById('q-end').value||null, config };
+  const r=await API.post('/api/qualifying', body);
+  if(r&&r.ok){ const d=await r.json().catch(()=>({})); document.getElementById('q-name').value=''; await loadEvents(); if(d.event) viewStandings(d.event.id); }
+  else { const e=r?await r.json().catch(()=>({})):{}; alert((e&&e.error)||'Could not create qualifier.'); }
+}
+
+async function viewStandings(id){
+  CUR=id;
+  const panel=document.getElementById('standings'); panel.style.display=''; panel.innerHTML='<div class="empty">Loading…</div>';
+  const r=await API.get('/api/qualifying/'+id); const data=r?await r.json():null;
+  if(!data||!data.event){ panel.innerHTML='<div class="empty">Could not load standings.</div>'; return; }
+  const ev=data.event, board=data.standings||[];
+  const rows=board.map(p=>`<tr>
+      <td class="rk ${p.rank&&p.rank<=3?'top':''}">${p.rank||'—'}</td>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td class="val">${fmtToPar(p.total)}</td>
+      <td>${p.roundsPlayed}${(p.counted!=null&&p.counted!==p.roundsPlayed)?` <span class="muted">(${p.counted} counted)</span>`:''}</td>
+    </tr>`).join('');
+  panel.innerHTML=`
+    <div class="sect-head">
+      <div><div class="sect-title">${esc(ev.name)} ${statusBadge(ev.status)}</div>
+        <div class="sect-sub">${esc(scoringLabel(ev.config))} · scored to par</div></div>
+      ${isCoach()?`<button class="btn btn-outline btn-sm" onclick="toggleStatus(${ev.id},'${ev.status==='open'?'closed':'open'}')">${ev.status==='open'?'Close qualifier':'Reopen'}</button>`:''}
+    </div>
+    <table class="lb">
+      <thead><tr><th class="rk">#</th><th>Player</th><th>To Par</th><th>Rounds</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="4" class="empty">No rounds logged yet.</td></tr>'}</tbody>
+    </table>
+    ${isCoach()?'<div id="enroll"></div>':''}`;
+  loadEvents();
+  if(isCoach()) renderEnroll(ev.id, board);
+}
+
+async function renderEnroll(eventId, board){
+  const el=document.getElementById('enroll'); if(!el) return;
+  let members=[];
+  try{ const r=await API.get('/api/teams/me'); const d=r?await r.json():{}; members=(d.members||[]).filter(m=>m.role==='team_member'); }catch(_){}
+  if(!members.length){ el.innerHTML=''; return; }
+  const enrolled=new Set(board.map(p=>p.userId));
+  el.innerHTML=`<div class="enroll-box">
+    <div class="sect-sub" style="margin-bottom:8px;">Roster — players auto-enroll when they log a qualifying round; toggle to add or remove manually.</div>
+    <div class="chips">${members.map(m=>`
+      <label class="chip ${enrolled.has(m.id)?'on':''}">
+        <input type="checkbox" ${enrolled.has(m.id)?'checked':''} onchange="toggleEnroll(${eventId},${m.id},this.checked)"> ${esc(m.name)}
+      </label>`).join('')}</div></div>`;
+}
+
+async function toggleEnroll(eventId,userId,on){
+  await API.post(`/api/qualifying/${eventId}/${on?'enroll':'withdraw'}`, { userId });
+  viewStandings(eventId);
+}
+async function toggleStatus(id,status){
+  await API.post(`/api/qualifying/${id}/status`, { status });
+  if(CUR===id) viewStandings(id); else loadEvents();
+}
+
+(async()=>{
+  ME=await initApp(); if(!ME) return;
+  if(!ME.team_id){ document.getElementById('no-team').style.display=''; document.getElementById('content').style.display='none'; return; }
+  if(isCoach()) document.getElementById('create-card').style.display='';
+  await loadEvents();
+})();
+</script>
+</body>
+</html>

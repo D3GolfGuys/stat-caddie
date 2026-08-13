@@ -32,6 +32,7 @@ app.use('/api/rankings',      require('./routes/rankings'));
 app.use('/api/teams',         require('./routes/teams'));
 app.use('/api/scoreboard',    require('./routes/scoreboard'));
 app.use('/api/admin',         require('./routes/admin'));
+app.use('/api/qualifying',    require('./routes/qualifying'));
 
 // ── Health check ─────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));

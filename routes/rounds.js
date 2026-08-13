@@ -86,6 +86,7 @@ router.post('/', async (req, res) => {
     playerName, tournament, roundNum = 1, roundDate, courseName, rating, slope,
     conditions, weather, roundNotes, holeData, summary,
     clippdTournamentId, clippdRoundId, clippdPlayerId, // set when the event was picked from the synced catalog
+    context, qualifyingEventId,                          // round-context tag + optional qualifying event
   } = req.body;
 
   try {
@@ -102,6 +103,23 @@ router.post('/', async (req, res) => {
       await pool.query('UPDATE rounds SET summary=$1 WHERE id=$2 AND user_id=$3',
         [JSON.stringify(summary), roundId, req.user.id]);
     }
+    // Round context tag (practice|qualifying|tournament|casual) + optional qualifying link.
+    const ALLOWED_CONTEXT = ['practice', 'qualifying', 'tournament', 'casual'];
+    let ctx = ALLOWED_CONTEXT.includes(context) ? context : 'casual';
+    let qEventId = null;
+    if (qualifyingEventId) {
+      const ev = await pool.query('SELECT id, team_id, status FROM qualifying_events WHERE id=$1', [qualifyingEventId]);
+      if (ev.rows.length && ev.rows[0].team_id === (req.user.team_id || null) && ev.rows[0].status === 'open') {
+        qEventId = ev.rows[0].id;
+        ctx = 'qualifying';
+        await pool.query(
+          "INSERT INTO qualifying_enrollment (event_id, user_id, status) VALUES ($1,$2,'active') ON CONFLICT (event_id, user_id) DO UPDATE SET status='active'",
+          [qEventId, req.user.id]);
+      }
+    }
+    await pool.query('UPDATE rounds SET context=$1, qualifying_event_id=$2 WHERE id=$3 AND user_id=$4',
+      [ctx, qEventId, roundId, req.user.id]);
+
     res.status(201).json({ id: roundId, status });
   } catch (err) {
     console.error(err);

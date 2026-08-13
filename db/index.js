@@ -395,6 +395,39 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_team_rankings_lookup ON team_rankings(metric_id, season_id, segment_type, segment_value, gender, rank);
   CREATE INDEX IF NOT EXISTS idx_team_rankings_team ON team_rankings(team_id, season_id);
 
+  -- ===================================================================
+  --  Qualifying — intra-squad scored competitions + round context tag.
+  --  Lineup / exemption / pick logic intentionally omitted (see design spec).
+  -- ===================================================================
+  ALTER TABLE rounds ADD COLUMN IF NOT EXISTS context VARCHAR(16) DEFAULT 'casual'; -- practice|qualifying|tournament|casual
+  CREATE INDEX IF NOT EXISTS idx_rounds_context ON rounds(context);
+
+  CREATE TABLE IF NOT EXISTS qualifying_events (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    starts_on DATE,
+    ends_on DATE,
+    status VARCHAR(12) DEFAULT 'open',            -- open | closed
+    config JSONB DEFAULT '{}'::jsonb,             -- { scoring, countBest, dropWorst }
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_qualifying_events_team ON qualifying_events(team_id);
+
+  CREATE TABLE IF NOT EXISTS qualifying_enrollment (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER REFERENCES qualifying_events(id) ON DELETE CASCADE NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    status VARCHAR(12) DEFAULT 'active',          -- active | withdrawn
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(event_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_qualifying_enrollment_event ON qualifying_enrollment(event_id);
+
+  -- Link a counting round to its event (added after the table exists so the FK resolves).
+  ALTER TABLE rounds ADD COLUMN IF NOT EXISTS qualifying_event_id INTEGER REFERENCES qualifying_events(id) ON DELETE SET NULL;
+  CREATE INDEX IF NOT EXISTS idx_rounds_qualifying_event ON rounds(qualifying_event_id);
+
   CREATE TABLE IF NOT EXISTS error_log (
     id SERIAL PRIMARY KEY,
     source VARCHAR(120),

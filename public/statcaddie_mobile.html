@@ -521,6 +521,20 @@ table.mini-sc tr.subtotal-row td { background: #d4e6d4; font-weight: 700; }
           <input type="date" id="roundDate" oninput="saveData()">
         </div>
       </div>
+      <div class="drawer-field">
+        <label>Round Type</label>
+        <select id="context" class="drawer-select" onchange="onContextChange()">
+          <option value="casual">Casual round</option>
+          <option value="practice">Practice (not ranked)</option>
+          <option value="qualifying">Qualifying</option>
+          <option value="tournament">Tournament</option>
+        </select>
+      </div>
+      <div class="drawer-field" id="qualifying-event-wrap" style="display:none;">
+        <label>Qualifying Event</label>
+        <select id="qualifyingEventId" class="drawer-select"><option value="">— select event —</option></select>
+        <div class="clink-hint" id="qualifying-hint"></div>
+      </div>
       <div class="drawer-field" style="position:relative;">
         <label>Course Name <span id="clink-badge" class="clink-badge"></span></label>
         <input type="text" id="courseName" placeholder="Type to search the course database…" autocomplete="off"
@@ -584,7 +598,7 @@ table.mini-sc tr.subtotal-row td { background: #d4e6d4; font-weight: 700; }
 <script>
 // ── CONSTANTS ──────────────────────────────────────────
 const HOLES = 18;
-const HEADER_FIELDS = ['playerName','tournament','roundNum','roundDate','courseName','courseExternalId','rating','slope','conditions','weather','roundNotes'];
+const HEADER_FIELDS = ['playerName','tournament','roundNum','roundDate','courseName','courseExternalId','rating','slope','conditions','weather','roundNotes','context','qualifyingEventId'];
 const HOLE_FIELDS   = ['par','hcp','yds','score','fw','gir','miss','drive','prox','putts','firstputt','threeputt','ud-att','ud-made','ss-att','ss-made','pen','notes'];
 
 let currentHole = 1;
@@ -1305,7 +1319,7 @@ function computeSummary() {
 }
 
 // ── COMMIT ROUND ───────────────────────────────────────
-function commitRound() {
+async function commitRound() {
   const player = document.getElementById('playerName')?.value;
   const date   = document.getElementById('roundDate')?.value;
   if (!player) { showToast('⚠️ Enter player name first'); openDrawer(); return; }
@@ -1327,6 +1341,8 @@ function commitRound() {
     conditions:  document.getElementById('conditions')?.value || '',
     weather:     document.getElementById('weather')?.value    || '',
     roundNotes:  document.getElementById('roundNotes')?.value || '',
+    context:     document.getElementById('context')?.value || 'casual',
+    qualifyingEventId: (document.getElementById('context')?.value === 'qualifying') ? (parseInt(document.getElementById('qualifyingEventId')?.value) || null) : null,
     summary,
     holeData: collectFormData(),
   };
@@ -1337,6 +1353,22 @@ function commitRound() {
     localStorage.setItem('statcaddieRounds', JSON.stringify(existing));
     showToast(`✅ Round committed! (${existing.length} total)`);
   } catch(e) { showToast('❌ Error saving: ' + e.message); }
+
+  // Sync to the account so the round runs through reconciliation (feeds stats,
+  // rankings and — when tagged — qualifying). Degrades silently to local-only.
+  try {
+    const res = await fetch('/api/rounds', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(roundRecord),
+    });
+    if (res.ok) {
+      await res.json().catch(() => ({}));
+      showToast(roundRecord.context === 'qualifying' ? '✅ Synced to your qualifier' : '✅ Synced to your account');
+    } else if (res.status === 401) {
+      showToast('Saved locally — sign in to sync to your account');
+    }
+  } catch (e) { /* offline: the local copy above is already saved */ }
 }
 
 // ── COURSE DATABASE PICKER ─────────────────────────────
@@ -1349,6 +1381,34 @@ let _cDebounce = null;
 let _cTees = [];
 
 function escHtml(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ── Qualifying: populate the open-events picker for this player's team ──
+let _qualEvents = [];
+async function loadQualEvents(){
+  try{
+    const r = await fetch('/api/qualifying/open', { credentials:'include' });
+    if(!r.ok){ onContextChange(); return; }
+    const data = await r.json();
+    _qualEvents = (data && data.events) || [];
+    const sel = document.getElementById('qualifyingEventId');
+    if(sel){
+      sel.innerHTML = '<option value="">— select event —</option>' +
+        _qualEvents.map(e=>`<option value="${e.id}">${escHtml(e.name)}</option>`).join('');
+      let saved={}; try{ saved=JSON.parse(localStorage.getItem('statcaddieDraft')||'{}'); }catch(_){}
+      if(saved.qualifyingEventId) sel.value = saved.qualifyingEventId;
+    }
+  }catch(e){}
+  onContextChange();
+}
+function onContextChange(){
+  const ctx=document.getElementById('context') ? document.getElementById('context').value : '';
+  const wrap=document.getElementById('qualifying-event-wrap');
+  const hint=document.getElementById('qualifying-hint');
+  if(!wrap) return;
+  if(ctx==='qualifying'){ wrap.style.display=''; if(hint) hint.textContent=_qualEvents.length?'':'No open qualifiers for your team yet — ask your coach to create one.'; }
+  else { wrap.style.display='none'; }
+  saveData();
+}
 function hideCResults(){ const b = document.getElementById('clink-results'); if (b) b.style.display = 'none'; }
 
 function onCourseInput(){
@@ -1480,6 +1540,7 @@ document.addEventListener('click', (e) => {
 buildCards();
 loadData();
 goHole(1);
+loadQualEvents();
 
 // Set today's date if empty
 const dateEl = document.getElementById('roundDate');
