@@ -103,44 +103,42 @@ router.post('/recompute-rankings', async (req, res) => {
 });
 
 
-// POST /api/admin/backfill-invites  { send?: bool, prune?: bool }
-// Emails the invitations that were created before the app could send mail.
-// Defaults to a PREVIEW: with send=false nothing is written and nothing is
-// mailed, so the plan can be inspected first. See services/inviteBackfill.js
-// for the seat accounting.
+// POST /api/admin/backfill-invites  { send?: bool, ids?: number[] }
+// Emails the invitations created before the app could send mail.
+//   send=false (default) -> preview only; writes nothing, mails nothing.
+//   send=true            -> starts a BACKGROUND job and returns immediately.
+// The send deliberately does not run inside the request: it used to, and a long
+// list outlived Railway's proxy timeout ("upstream error") while the server
+// carried on mailing, leaving nobody sure who had been contacted. Poll
+// GET /api/admin/backfill-invites/status for progress.
 router.post('/backfill-invites', async (req, res) => {
   try {
     const send = req.body.send === true;
-    const prune = req.body.prune === true;
-    // When the console passes an explicit id list, only those are emailed -
-    // the admin curates the plan before anything goes out.
-    const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Boolean) : null;
     const plan = await inviteBackfill.buildPlan(pool);
 
-    if (ids) {
-      const keep = new Set(ids);
-      plan.send = plan.send.filter(i => keep.has(i.id));
-      plan.refreshSend = plan.refreshSend.filter(i => keep.has(i.id));
-    }
-
     const summarize = list => list.map(i => ({
-      id: i.id, email: i.email, team: i.team_name, expires_at: i.expires_at, cap: i.cap,
+      id: i.id, email: i.email, team: i.team_name,
+      expires_at: i.expires_at, emailed_at: i.emailed_at, cap: i.cap,
     }));
     const payload = {
-      ok: true, send, total: plan.total, teams: plan.teams,
-      willEmail: summarize(plan.send),
-      willRefreshAndEmail: summarize(plan.refreshSend),
+      ok: true, total: plan.total, teams: plan.teams,
+      ready: summarize(plan.ready),
+      refresh: summarize(plan.refresh),
+      resend: summarize(plan.resend),
       duplicates: summarize(plan.duplicates),
       noSeat: summarize(plan.noSeat),
     };
 
-    if (!send) return res.json({ ...payload, preview: true });
+    if (!send) return res.json({ ...payload, preview: true, ...inviteBackfill.jobSnapshot() });
 
-    // Throttled to 1/sec; a large backfill takes a while, so the request is
-    // long-lived by design rather than fire-and-forget (the coach needs the
-    // per-address result to know who actually got mail).
-    const results = await inviteBackfill.execute(pool, plan, { prune });
-    res.json({ ...payload, preview: false, results });
+    // Only what the operator ticked, matched against the sendable pool.
+    const ids = Array.isArray(req.body.ids) ? new Set(req.body.ids.map(Number)) : null;
+    const picked = inviteBackfill.candidates(plan).filter(i => !ids || ids.has(i.id));
+    if (!picked.length) return res.status(400).json({ error: 'Nothing selected to send' });
+
+    const started = inviteBackfill.start(pool, picked);
+    if (!started.started) return res.status(409).json({ error: 'A backfill is already running', ...started });
+    res.json({ ...payload, preview: false, ...started });
   } catch (err) {
     console.error(err);
     logError('admin/backfill-invites', err, { userId: req.user.id });
@@ -148,6 +146,8 @@ router.post('/backfill-invites', async (req, res) => {
   }
 });
 
+// GET /api/admin/backfill-invites/status — progress of the running/last job.
+router.get('/backfill-invites/status', (req, res) => res.json(inviteBackfill.jobSnapshot()));
 
 // DELETE /api/admin/invitations/:id — drop a pending invitation entirely.
 // Used from the backfill panel to bin invites that shouldn't be sent (wrong

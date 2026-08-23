@@ -428,6 +428,11 @@ const schema = `
   ALTER TABLE rounds ADD COLUMN IF NOT EXISTS qualifying_event_id INTEGER REFERENCES qualifying_events(id) ON DELETE SET NULL;
   CREATE INDEX IF NOT EXISTS idx_rounds_qualifying_event ON rounds(qualifying_event_id);
 
+  -- When an invitation was actually emailed. Null means the player has never
+  -- been contacted (every invite predating the mail layer). Stamped per send so
+  -- the backfill is resumable and never silently re-mails anyone.
+  ALTER TABLE invitations ADD COLUMN IF NOT EXISTS emailed_at TIMESTAMP;
+
   -- ===================================================================
   --  Password resets - single-use, short-lived tokens. Only a SHA-256 hash of
   --  the token is stored, so a database leak can't be used to seize accounts.

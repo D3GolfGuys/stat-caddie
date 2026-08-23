@@ -2,39 +2,44 @@
  * Invite backfill
  * ---------------
  * Coaches sent invitations while the app had no email layer, so those players
- * were never actually contacted - and the invitations sit on team seats. This
- * plans and executes the catch-up send.
+ * were never contacted - and the invitations sit on team seats. This plans and
+ * runs the catch-up send.
  *
- * The seat rule is the subtle part. seatUsage() in routes/teams.js charges a
- * pending invitation against the team's cap only while it is UNEXPIRED:
+ * WHY THIS RUNS AS A BACKGROUND JOB
+ * A send loop inside the HTTP request died against Railway's edge proxy
+ * ("upstream error") while the server kept mailing - the operator was left not
+ * knowing who had been contacted. So: the request starts a job and returns
+ * immediately, the console polls for progress, and every successful send is
+ * stamped on the row (invitations.emailed_at). That stamp makes the whole job
+ * resumable and idempotent: re-running never silently re-mails anyone, and a
+ * deliberate re-send is a separate, explicitly-chosen group.
  *
+ * THE SEAT RULE
+ * seatUsage() in routes/teams.js charges a pending invitation against the cap
+ * only while it is UNEXPIRED:
  *     invitations WHERE used_at IS NULL AND expires_at > NOW()
- *
- * Which splits the work three ways:
- *   • pending + unexpired - already holding a seat, so emailing costs nothing.
- *   • pending + EXPIRED   - holds no seat and its link is dead. Making it usable
- *                           means pushing the expiry out, which RE-TAKES a seat.
- *                           Only done when the team is under cap; the rest are
- *                           reported so the coach can add seats or cancel
- *                           deliberately, rather than being silently overfilled.
- *   • duplicates          - two pending rows for one address hold two seats.
- *                           Only the newest is emailed; pruning frees the rest.
- *
- * Addresses that already have an account are skipped - they don't need inviting.
- *
- * Shared by scripts/backfill-invites.js (CLI) and POST /api/admin/backfill-invites.
+ * so:
+ *   • unexpired      - already holds a seat; emailing costs nothing.
+ *   • expired        - holds no seat and its link is dead. Reviving it means
+ *                      pushing the expiry out, which RE-TAKES a seat. Only done
+ *                      when the team is under cap; the rest are reported, not
+ *                      silently forced in.
+ *   • duplicates     - two pending rows for one address hold two seats. Only
+ *                      the newest is offered; deleting the rest frees seats.
+ * Addresses that already have an account are skipped entirely.
  */
 const { sendInviteEmail } = require('./emails');
 
 const INCLUDED_SEATS = 15;
 const TTL_DAYS = 7;
+const THROTTLE_MS = 600;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/** Read-only. Returns what a send would do, with no side effects. */
+// ── Planning (read-only) ────────────────────────────────────────────────────
 async function buildPlan(db, { teamId = null } = {}) {
   const { rows: invites } = await db.query(`
-    SELECT i.id, i.email, i.token, i.team_id, i.created_at, i.expires_at,
+    SELECT i.id, i.email, i.token, i.team_id, i.created_at, i.expires_at, i.emailed_at,
            (i.expires_at <= NOW()) AS expired,
            t.name AS team_name, t.max_members,
            u.name AS coach_name
@@ -47,7 +52,7 @@ async function buildPlan(db, { teamId = null } = {}) {
      ORDER BY i.team_id, LOWER(i.email), i.created_at DESC`,
     teamId ? [teamId] : []);
 
-  const plan = { send: [], refreshSend: [], duplicates: [], noSeat: [], teams: 0, total: invites.length };
+  const plan = { ready: [], refresh: [], resend: [], duplicates: [], noSeat: [], teams: 0, total: invites.length };
   if (!invites.length) return plan;
 
   const teamIds = [...new Set(invites.map(i => i.team_id))];
@@ -66,42 +71,88 @@ async function buildPlan(db, { teamId = null } = {}) {
     if (seen.has(key)) { plan.duplicates.push(inv); continue; }
     seen.add(key);
 
-    if (!inv.expired) { plan.send.push(inv); continue; }
+    // Already mailed at some point - offered only as a deliberate re-send.
+    if (inv.emailed_at && !inv.expired) { plan.resend.push(inv); continue; }
+
+    if (!inv.expired) { plan.ready.push(inv); continue; }
 
     const u = seats.get(inv.team_id);
     const cap = inv.max_members || INCLUDED_SEATS;
-    if (u.players + u.holding < cap) { u.holding += 1; plan.refreshSend.push(inv); }
+    if (u.players + u.holding < cap) { u.holding += 1; inv.needsRefresh = true; plan.refresh.push(inv); }
     else plan.noSeat.push({ ...inv, cap });
   }
   return plan;
 }
 
-/** Sends the plan. `throttleMs` spaces the sends to stay clear of rate limits. */
-async function execute(db, plan, { prune = false, throttleMs = 1000, appUrl } = {}) {
-  const base = (appUrl || process.env.APP_URL || 'https://www.collegegolfmetrics.com').replace(/\/+$/, '');
-  const results = { sent: [], failed: [], pruned: 0 };
-  const refreshIds = new Set(plan.refreshSend.map(i => i.id));
-
-  for (const inv of [...plan.send, ...plan.refreshSend]) {
-    if (refreshIds.has(inv.id)) {
-      await db.query(`UPDATE invitations SET expires_at = NOW() + INTERVAL '${TTL_DAYS} days' WHERE id=$1`, [inv.id]);
-    }
-    const r = await sendInviteEmail(inv.email, {
-      teamName: inv.team_name,
-      coachName: inv.coach_name,
-      inviteUrl: `${base}/accept-invite.html?token=${inv.token}`,
-      expiresDays: TTL_DAYS,
-    });
-    if (r.sent) results.sent.push(inv.email);
-    else results.failed.push({ email: inv.email, reason: r.reason, error: r.error });
-    if (throttleMs) await sleep(throttleMs);
-  }
-
-  if (prune && plan.duplicates.length) {
-    const { rowCount } = await db.query('DELETE FROM invitations WHERE id = ANY($1)', [plan.duplicates.map(d => d.id)]);
-    results.pruned = rowCount;
-  }
-  return results;
+/** Every invite the operator is allowed to pick from, flattened. */
+function candidates(plan) {
+  return [...plan.ready, ...plan.refresh, ...plan.resend];
 }
 
-module.exports = { buildPlan, execute, INCLUDED_SEATS, TTL_DAYS };
+// ── Background job ──────────────────────────────────────────────────────────
+// One at a time, in memory. A restart loses the progress readout but not the
+// work: emailed_at is already on the rows, so a re-run picks up where it left.
+let job = null;
+
+function jobSnapshot() {
+  if (!job) return { running: false, job: null };
+  return {
+    running: job.running,
+    job: {
+      id: job.id, total: job.total, done: job.done,
+      sent: job.sent, failed: job.failed,
+      startedAt: job.startedAt, finishedAt: job.finishedAt,
+      currentEmail: job.currentEmail, error: job.error,
+    },
+  };
+}
+
+function start(db, invites, { appUrl } = {}) {
+  if (job && job.running) return { started: false, reason: 'already_running', ...jobSnapshot() };
+
+  job = {
+    id: `bf_${Date.now()}`, running: true, total: invites.length, done: 0,
+    sent: [], failed: [], startedAt: new Date().toISOString(), finishedAt: null,
+    currentEmail: null, error: null,
+  };
+
+  // Deliberately not awaited - the HTTP request returns immediately.
+  (async () => {
+    const base = (appUrl || process.env.APP_URL || 'https://www.collegegolfmetrics.com').replace(/\/+$/, '');
+    try {
+      for (const inv of invites) {
+        job.currentEmail = inv.email;
+        if (inv.needsRefresh) {
+          await db.query(`UPDATE invitations SET expires_at = NOW() + INTERVAL '${TTL_DAYS} days' WHERE id=$1`, [inv.id]);
+        }
+        const r = await sendInviteEmail(inv.email, {
+          teamName: inv.team_name, coachName: inv.coach_name,
+          inviteUrl: `${base}/accept-invite.html?token=${inv.token}`,
+          expiresDays: TTL_DAYS,
+        });
+        if (r.sent) {
+          // Stamp BEFORE moving on, so a crash can never lose the record of a
+          // message that has already left.
+          await db.query('UPDATE invitations SET emailed_at = NOW() WHERE id=$1', [inv.id]);
+          job.sent.push(inv.email);
+        } else {
+          job.failed.push({ email: inv.email, reason: r.reason, error: r.error });
+        }
+        job.done += 1;
+        if (THROTTLE_MS) await sleep(THROTTLE_MS);
+      }
+    } catch (err) {
+      job.error = err.message;
+      console.error('[backfill] job failed:', err);
+    } finally {
+      job.running = false;
+      job.currentEmail = null;
+      job.finishedAt = new Date().toISOString();
+      console.log(`[backfill] finished: ${job.sent.length} sent, ${job.failed.length} failed`);
+    }
+  })();
+
+  return { started: true, ...jobSnapshot() };
+}
+
+module.exports = { buildPlan, candidates, start, jobSnapshot, INCLUDED_SEATS, TTL_DAYS };

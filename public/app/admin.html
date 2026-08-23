@@ -380,29 +380,29 @@ async function clearDemo() {
 </script>
 <script>
 // ── invite backfill ─────────────────────────────────────
-// Review-then-send. "Review" builds the plan server-side and writes nothing.
-// Every row is individually deselectable (skip this time) or deletable (bin the
-// invitation for good, freeing its seat). Send mails only what stays ticked.
-let BF_PLAN=null;
+// Review, curate, then send. The send starts a BACKGROUND job on the server and
+// this page polls it — an in-request send used to outlive Railway's proxy
+// timeout and report a "network error" while mail was still going out.
+let BF_PLAN=null, BF_POLL=null;
 function bfEsc(x){ return String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function bfDate(v){ try{ return new Date(v).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(_){ return ''; } }
 
-function bfGroup(key, title, rows, tone, note, selectable){
+function bfGroup(key, title, rows, tone, note, selectable, checked){
   if(!rows||!rows.length) return '';
   return `<div style="margin-bottom:16px;">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <div style="font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:${tone};">${bfEsc(title)} (${rows.length})</div>
       ${selectable?`<button class="link-btn" style="font-size:12px;" onclick="bfToggleAll('${key}',true)">select all</button>
       <button class="link-btn" style="font-size:12px;" onclick="bfToggleAll('${key}',false)">none</button>`:''}
-      ${key==='duplicates'?`<button class="link-btn" style="font-size:12px;color:var(--red);" onclick="bfDeleteGroup('duplicates')">delete all duplicates</button>`:''}
+      ${key==='duplicates'?`<button class="link-btn" style="font-size:12px;color:var(--red);" onclick="bfDeleteGroup()">delete all duplicates</button>`:''}
     </div>
     ${note?`<div style="font-size:12px;color:var(--muted);margin:3px 0 8px;">${bfEsc(note)}</div>`:''}
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      ${rows.map(r=>`<tr data-bf-group="${key}">
-        <td style="padding:5px 8px 5px 0;width:22px;">${selectable?`<input type="checkbox" class="bf-chk" data-group="${key}" value="${r.id}" checked onchange="bfCount()">`:''}</td>
+      ${rows.map(r=>`<tr>
+        <td style="padding:5px 8px 5px 0;width:22px;">${selectable?`<input type="checkbox" class="bf-chk" data-group="${key}" value="${r.id}" ${checked?'checked':''} onchange="bfCount()">`:''}</td>
         <td style="padding:5px 10px 5px 0;"><strong>${bfEsc(r.email)}</strong></td>
         <td style="padding:5px 10px 5px 0;color:var(--muted);">${bfEsc(r.team)}</td>
-        <td style="padding:5px 10px 5px 0;color:var(--muted);font-size:12px;white-space:nowrap;">${r.expires_at?bfDate(r.expires_at):''}</td>
+        <td style="padding:5px 10px 5px 0;color:var(--muted);font-size:12px;white-space:nowrap;">${r.emailed_at?('emailed '+bfDate(r.emailed_at)):(r.expires_at?bfDate(r.expires_at):'')}</td>
         <td style="padding:5px 0;text-align:right;white-space:nowrap;">
           <button class="link-btn" style="color:var(--red);font-size:12px;" onclick="bfDelete(${r.id},'${bfEsc(r.email).replace(/'/g,"\\'")}')">Delete</button>
         </td>
@@ -410,39 +410,69 @@ function bfGroup(key, title, rows, tone, note, selectable){
     </table></div>`;
 }
 
-function bfToggleAll(group, on){
-  document.querySelectorAll(`.bf-chk[data-group="${group}"]`).forEach(c=>{ c.checked=on; });
-  bfCount();
-}
-function bfSelectedIds(){
-  return [...document.querySelectorAll('.bf-chk')].filter(c=>c.checked).map(c=>Number(c.value));
-}
+function bfToggleAll(group,on){ document.querySelectorAll(`.bf-chk[data-group="${group}"]`).forEach(c=>{c.checked=on;}); bfCount(); }
+function bfSelectedIds(){ return [...document.querySelectorAll('.bf-chk')].filter(c=>c.checked).map(c=>Number(c.value)); }
 function bfCount(){
-  const n=bfSelectedIds().length;
-  const sd=document.getElementById('btn-bf-send');
+  const n=bfSelectedIds().length, sd=document.getElementById('btn-bf-send');
   sd.textContent = n ? `Send selected (${n})` : 'Send selected';
   sd.disabled = !n;
   sd.style.display = document.querySelectorAll('.bf-chk').length ? '' : 'none';
 }
 
-async function bfDelete(id, email){
+async function bfDelete(id,email){
   if(!confirm(`Delete the invitation to ${email}?\n\nThe link stops working and the seat is freed. This can't be undone — the coach would need to invite them again.`)) return;
   const r=await API.del('/api/admin/invitations/'+id);
   if(r&&r.ok){ await backfillInvites(false); }
   else { const d=r?await r.json().catch(()=>({})):{}; alert((d&&d.error)||'Could not delete that invitation.'); }
 }
-
-async function bfDeleteGroup(group){
-  const rows=(BF_PLAN&&BF_PLAN[group==='duplicates'?'duplicates':group])||[];
+async function bfDeleteGroup(){
+  const rows=(BF_PLAN&&BF_PLAN.duplicates)||[];
   if(!rows.length) return;
   if(!confirm(`Delete all ${rows.length} duplicate invitation(s)?\n\nThese are older invites to addresses that also have a newer one. The newer invite is untouched.`)) return;
   for(const r of rows){ await API.del('/api/admin/invitations/'+r.id); }
   await backfillInvites(false);
 }
 
+function bfRenderPlan(d){
+  document.getElementById('bf-out').innerHTML =
+    bfGroup('ready','Ready to send', d.ready, 'var(--green-mid)', 'Never emailed. Link is valid and already holds a seat.', true, true) +
+    bfGroup('refresh','Expired — link will be refreshed, then sent', d.refresh, 'var(--gold)', 'Takes a seat back; the team has room for it.', true, true) +
+    bfGroup('resend','Already emailed — tick only to send again', d.resend, 'var(--muted)', 'These players have had an invitation. Left unticked so nobody gets a duplicate by accident.', true, false) +
+    bfGroup('duplicates','Duplicates — not sent', d.duplicates, 'var(--muted)', 'Older invite to an address that also has a newer one. Safe to delete.', false, false) +
+    bfGroup('noSeat','Skipped — team is at its seat cap', d.noSeat, 'var(--red)', 'Expired with no free seat. Add seats or delete a stale invite, then review again.', false, false);
+  bfCount();
+}
+
+function bfProgress(j){
+  const msg=document.getElementById('bf-msg');
+  const pct = j.total ? Math.round((j.done/j.total)*100) : 0;
+  msg.style.color='var(--muted)';
+  msg.textContent = `Sending ${j.done} of ${j.total} (${pct}%)${j.currentEmail?` — ${j.currentEmail}`:''}`;
+}
+
+async function bfPoll(){
+  try{
+    const r=await API.get('/api/admin/backfill-invites/status');
+    const d=r?await r.json():{};
+    if(!d.job) return;
+    if(d.running){ bfProgress(d.job); return; }
+
+    clearInterval(BF_POLL); BF_POLL=null;
+    const j=d.job, msg=document.getElementById('bf-msg');
+    msg.style.color = j.failed.length ? 'var(--gold)' : 'var(--green-mid)';
+    msg.textContent = `✅ ${j.sent.length} emailed${j.failed.length?`, ${j.failed.length} failed`:''}.`;
+    if(j.failed.length){
+      document.getElementById('bf-out').insertAdjacentHTML('afterbegin',
+        `<div style="margin-bottom:12px;color:var(--red);font-size:12.5px;">Failed: ${j.failed.map(f=>`${bfEsc(f.email)} (${bfEsc(f.reason)})`).join(', ')}</div>`);
+    }
+    document.getElementById('btn-bf-preview').disabled=false;
+    await backfillInvites(false);
+  }catch(_){ /* transient poll error - keep polling */ }
+}
+
 async function backfillInvites(send){
   const pv=document.getElementById('btn-bf-preview'), sd=document.getElementById('btn-bf-send');
-  const msg=document.getElementById('bf-msg'), out=document.getElementById('bf-out');
+  const msg=document.getElementById('bf-msg');
   let ids=null;
 
   if(send){
@@ -453,40 +483,34 @@ async function backfillInvites(send){
 
   pv.disabled=true; sd.disabled=true;
   msg.style.color='var(--muted)';
-  msg.textContent = send ? 'Sending… about a second each, leave this tab open.' : 'Loading…';
+  msg.textContent = send ? 'Starting…' : 'Loading…';
 
   try{
     const r=await API.post('/api/admin/backfill-invites', send?{ send:true, ids }:{ send:false });
     const d=r?await r.json():{};
-    if(!r||!r.ok){ msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Backfill failed.'; pv.disabled=false; sd.disabled=false; return; }
+    if(!r||!r.ok){ msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Backfill failed.'; pv.disabled=false; bfCount(); return; }
 
     BF_PLAN=d;
     if(!d.total){
       msg.style.color='var(--green-mid)'; msg.textContent='✅ No pending invitations — nothing to backfill.';
-      out.innerHTML=''; sd.style.display='none'; pv.disabled=false; return;
+      document.getElementById('bf-out').innerHTML=''; sd.style.display='none'; pv.disabled=false; return;
     }
 
-    out.innerHTML =
-      bfGroup('willEmail','Ready to send', d.willEmail, 'var(--green-mid)', 'Link is still valid and already holds a seat.', true) +
-      bfGroup('willRefreshAndEmail','Expired — link will be refreshed, then sent', d.willRefreshAndEmail, 'var(--gold)', 'Takes a seat back; the team has room for it.', true) +
-      bfGroup('duplicates','Duplicates — not sent', d.duplicates, 'var(--muted)', 'Older invite to an address that also has a newer one. Safe to delete.', false) +
-      bfGroup('noSeat','Skipped — team is at its seat cap', d.noSeat, 'var(--red)', 'Expired with no free seat. Add seats or delete a stale invite, then review again.', false);
+    bfRenderPlan(d);
 
     if(d.preview){
       msg.style.color='var(--muted)';
       msg.textContent=`Nothing sent yet — ${d.total} pending across ${d.teams} team${d.teams===1?'':'s'}. Untick anyone who shouldn't get mail.`;
-      bfCount();
+      // A job may still be running from a previous click (e.g. after a reload).
+      if(d.running){ sd.style.display='none'; if(!BF_POLL) BF_POLL=setInterval(bfPoll,1500); bfPoll(); }
+      else pv.disabled=false;
     } else {
-      const res=d.results||{sent:[],failed:[]};
-      msg.style.color = res.failed.length ? 'var(--gold)' : 'var(--green-mid)';
-      msg.textContent = `✅ ${res.sent.length} emailed${res.failed.length?`, ${res.failed.length} failed`:''}.`;
-      if(res.failed.length){
-        out.innerHTML += `<div style="margin-top:10px;color:var(--red);font-size:12.5px;">Failed: ${res.failed.map(f=>`${bfEsc(f.email)} (${bfEsc(f.reason)})`).join(', ')}</div>`;
-      }
       sd.style.display='none';
+      msg.textContent='Sending… you can leave this page, it keeps running on the server.';
+      if(BF_POLL) clearInterval(BF_POLL);
+      BF_POLL=setInterval(bfPoll,1500); bfPoll();
     }
-  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error: '+e.message; }
-  pv.disabled=false;
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error: '+e.message; pv.disabled=false; }
 }
 
 async function recomputeRankings(){

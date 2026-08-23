@@ -14,7 +14,7 @@
  */
 require('dotenv').config();
 const { pool } = require('../db');
-const { buildPlan, execute, TTL_DAYS } = require('../services/inviteBackfill');
+const { buildPlan, candidates, start, jobSnapshot, TTL_DAYS } = require('../services/inviteBackfill');
 const { isConfigured } = require('../services/mailer');
 
 const args = process.argv.slice(2);
@@ -37,14 +37,19 @@ async function main() {
   if (!plan.total) { console.log('No pending invitations to backfill.'); return; }
   console.log(`Found ${plan.total} pending invitation(s) across ${plan.teams} team(s).\n`);
 
-  if (plan.send.length) {
-    console.log(`EMAIL AS-IS (${plan.send.length}) - already holding a seat, link still valid`);
-    plan.send.forEach(i => console.log(line(i, `expires ${new Date(i.expires_at).toLocaleDateString()}`)));
+  if (plan.ready.length) {
+    console.log(`EMAIL AS-IS (${plan.ready.length}) - already holding a seat, link still valid`);
+    plan.ready.forEach(i => console.log(line(i, `expires ${new Date(i.expires_at).toLocaleDateString()}`)));
     console.log('');
   }
-  if (plan.refreshSend.length) {
-    console.log(`REFRESH + EMAIL (${plan.refreshSend.length}) - expired link, team has room, expiry reset to ${TTL_DAYS} days`);
-    plan.refreshSend.forEach(i => console.log(line(i, `was expired ${new Date(i.expires_at).toLocaleDateString()}`)));
+  if (plan.refresh.length) {
+    console.log(`REFRESH + EMAIL (${plan.refresh.length}) - expired link, team has room, expiry reset to ${TTL_DAYS} days`);
+    plan.refresh.forEach(i => console.log(line(i, `was expired ${new Date(i.expires_at).toLocaleDateString()}`)));
+    console.log('');
+  }
+  if (plan.resend.length) {
+    console.log(`ALREADY EMAILED (${plan.resend.length}) - skipped by the CLI; re-send from the admin console if needed`);
+    plan.resend.forEach(i => console.log(line(i, `emailed ${new Date(i.emailed_at).toLocaleDateString()}`)));
     console.log('');
   }
   if (plan.duplicates.length) {
@@ -60,10 +65,24 @@ async function main() {
 
   if (!SEND) { console.log('Dry run complete. Re-run with --send to act on this plan.'); return; }
 
-  const r = await execute(pool, plan, { prune: PRUNE });
-  r.sent.forEach(e => console.log(`   sent    ${e}`));
-  r.failed.forEach(f => console.log(`   FAILED  ${f.email} - ${f.reason} ${f.error || ''}`));
-  console.log(`\nDone. ${r.sent.length} sent, ${r.failed.length} failed${r.pruned ? `, ${r.pruned} duplicate row(s) deleted` : ''}.`);
+  if (PRUNE && plan.duplicates.length) {
+    const { rowCount } = await pool.query('DELETE FROM invitations WHERE id = ANY($1)', [plan.duplicates.map(d => d.id)]);
+    console.log(`Deleted ${rowCount} duplicate invitation row(s).`);
+  }
+
+  // The job runs in the background; poll it so the CLI stays a foreground tool.
+  start(pool, [...plan.ready, ...plan.refresh]);
+  let last = -1;
+  for (;;) {
+    const { running, job: j } = jobSnapshot();
+    if (j && j.done !== last) { last = j.done; console.log(`   ${j.done}/${j.total} ${j.currentEmail || ''}`); }
+    if (!running) {
+      j.failed.forEach(f => console.log(`   FAILED  ${f.email} - ${f.reason} ${f.error || ''}`));
+      console.log(`\nDone. ${j.sent.length} sent, ${j.failed.length} failed.`);
+      break;
+    }
+    await new Promise(r => setTimeout(r, 400));
+  }
   if (plan.noSeat.length) console.log(`${plan.noSeat.length} expired invite(s) left inactive for want of seats.`);
 }
 
