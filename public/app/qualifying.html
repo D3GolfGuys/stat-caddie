@@ -94,7 +94,7 @@
               <select id="q-drop"><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></div>
             <div class="qf"><label>Start (optional)</label><input type="date" id="q-start"></div>
             <div class="qf"><label>End (optional)</label><input type="date" id="q-end"></div>
-            <button class="btn btn-primary" onclick="createEvent()">Create</button>
+            <button class="btn btn-primary" id="q-create-btn">Create</button>
           </div>
         </div>
 
@@ -135,7 +135,7 @@ async function loadEvents(){
     </div>`).join('');
 }
 
-async function createEvent(){
+async function createQualifier(){
   const name=document.getElementById('q-name').value.trim();
   if(!name){ alert('Give the qualifier a name.'); return; }
   const config={ scoring:document.getElementById('q-scoring').value, dropWorst:parseInt(document.getElementById('q-drop').value)||0 };
@@ -198,7 +198,11 @@ async function toggleStatus(id,status){
 (async()=>{
   ME=await initApp(); if(!ME) return;
   if(!ME.team_id){ document.getElementById('no-team').style.display=''; document.getElementById('content').style.display='none'; return; }
-  if(isCoach()) document.getElementById('create-card').style.display='';
+  if(isCoach()){
+    document.getElementById('create-card').style.display='';
+    document.getElementById('q-create-btn').addEventListener('click', createQualifier);
+    document.getElementById('q-name').addEventListener('keydown', ev=>{ if(ev.key==='Enter') createQualifier(); });
+  }
   await loadEvents();
 })();
 </script>
