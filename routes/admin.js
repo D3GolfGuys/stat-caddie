@@ -6,6 +6,7 @@ const { seedDemo, seedTeam, seedLeague, clearDemo } = require('../services/demoS
 const rankings = require('../services/rankings');
 const reconcile = require('../services/reconcile');
 const { logError } = require('../services/errorLog');
+const inviteBackfill = require('../services/inviteBackfill');
 
 // Owner-only. Every route here requires a valid session AND the admin email.
 router.use(requireAuth, requireAdmin);
@@ -99,6 +100,43 @@ router.post('/recompute-rankings', async (req, res) => {
     const summary = await rankings.recompute(pool, { seasonLabel: process.env.SEASON_LABEL || 'current' });
     res.json({ ok: true, ...summary });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to recompute rankings' }); }
+});
+
+
+// POST /api/admin/backfill-invites  { send?: bool, prune?: bool }
+// Emails the invitations that were created before the app could send mail.
+// Defaults to a PREVIEW: with send=false nothing is written and nothing is
+// mailed, so the plan can be inspected first. See services/inviteBackfill.js
+// for the seat accounting.
+router.post('/backfill-invites', async (req, res) => {
+  try {
+    const send = req.body.send === true;
+    const prune = req.body.prune === true;
+    const plan = await inviteBackfill.buildPlan(pool);
+
+    const summarize = list => list.map(i => ({
+      email: i.email, team: i.team_name, expires_at: i.expires_at, cap: i.cap,
+    }));
+    const payload = {
+      ok: true, send, total: plan.total, teams: plan.teams,
+      willEmail: summarize(plan.send),
+      willRefreshAndEmail: summarize(plan.refreshSend),
+      duplicates: summarize(plan.duplicates),
+      noSeat: summarize(plan.noSeat),
+    };
+
+    if (!send) return res.json({ ...payload, preview: true });
+
+    // Throttled to 1/sec; a large backfill takes a while, so the request is
+    // long-lived by design rather than fire-and-forget (the coach needs the
+    // per-address result to know who actually got mail).
+    const results = await inviteBackfill.execute(pool, plan, { prune });
+    res.json({ ...payload, preview: false, results });
+  } catch (err) {
+    console.error(err);
+    logError('admin/backfill-invites', err, { userId: req.user.id });
+    res.status(500).json({ error: 'Backfill failed: ' + err.message });
+  }
 });
 
 
