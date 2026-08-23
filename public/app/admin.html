@@ -467,8 +467,10 @@ function bfShowResult(j){
     if(reasons.includes('not_configured')||reasons.includes('nodemailer_missing')){
       html += `<div style="margin-top:8px;font-weight:700;">The server has no working SMTP credentials, so nothing could be sent. Check SMTP_USER and SMTP_PASS on the app service in Railway, then redeploy.</div>`;
     }
-    if(reasons.includes('send_failed')){
-      html += `<div style="margin-top:8px;font-weight:700;">Gmail rejected the send. The App Password is usually the cause — it must be a 16-character App Password on a mailbox with 2-Step Verification enabled.</div>`;
+    if(j.failed.some(f=>/timeout|ECONN|ETIMEDOUT|EHOSTUNREACH/i.test(f.error||''))){
+      html += `<div style="margin-top:8px;font-weight:700;">The mail server was never reached — this is a blocked connection, not a rejected password. Railway blocks outbound SMTP on Hobby plans, so set <code>RESEND_API_KEY</code> (HTTPS, not blocked) instead of SMTP.</div>`;
+    } else if(reasons.includes('send_failed')){
+      html += `<div style="margin-top:8px;font-weight:700;">The provider rejected the send. The reason above is verbatim from them — an unverified sending domain and a bad API key are the usual causes.</div>`;
     }
   }
   box.innerHTML=html;
@@ -478,7 +480,7 @@ function bfMailWarning(mail){
   const w=document.getElementById('bf-warn');
   if(mail && mail.configured===false){
     w.style.display='';
-    w.innerHTML='<strong>Outgoing email is not configured on the server.</strong> Sending now would fail for every player. Set <code>SMTP_USER</code> and <code>SMTP_PASS</code> on the app service in Railway and let it redeploy, then reload this page.';
+    w.innerHTML='<strong>Outgoing email is not configured on the server.</strong> Sending now would fail for every player. Set <code>RESEND_API_KEY</code> on the app service in Railway and let it redeploy, then reload this page.';
   } else { w.style.display='none'; }
 }
 

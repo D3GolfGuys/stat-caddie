@@ -17,17 +17,17 @@ const { sendMail } = require('../services/mailer');
   const to = process.argv[2];
 
   if (!isConfigured()) {
-    console.error('✖ SMTP is not configured. Set SMTP_USER and SMTP_PASS (see .env.example).');
+    console.error('✖ No mail provider configured. Set RESEND_API_KEY (or SMTP_USER/SMTP_PASS) — see .env.example.');
     process.exit(1);
   }
   console.log(`→ Sending as: ${fromAddress()}`);
-  console.log(`→ Host: ${process.env.SMTP_HOST || 'smtp.gmail.com'}:${process.env.SMTP_PORT || 465}`);
+  console.log(`→ Provider: ${require('../services/mailer').provider()}`);
 
   const v = await verifyTransport();
   if (!v.ok) {
     console.error(`✖ Credentials rejected (${v.reason}): ${v.error || ''}`);
-    console.error('  Gmail note: SMTP_PASS must be a 16-char App Password, not the account password,');
-    console.error('  and 2-Step Verification must be ON for that mailbox.');
+    console.error('  Resend: check the API key, and that MAIL_FROM uses a domain verified in Resend.');
+    console.error('  SMTP: many hosts (Railway Hobby included) block outbound SMTP entirely.');
     process.exit(1);
   }
   console.log('✔ SMTP credentials accepted.');
