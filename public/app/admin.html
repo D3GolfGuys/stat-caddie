@@ -136,13 +136,10 @@
       <!-- Pending invitations (backfill) -->
       <div class="panel">
         <h3>Pending invitations</h3>
-        <p class="page-sub" style="margin:0 0 12px;">Coaches sent invites while the app couldn't send email yet, so those players were never contacted — and the invites are sitting on team seats. Preview first: it shows exactly who would be emailed and sends nothing.</p>
+        <p class="page-sub" style="margin:0 0 12px;">Coaches sent invites while the app couldn't send email yet, so those players were never contacted — and the invites are sitting on team seats. Review the list, untick anyone who shouldn't get mail, delete the ones that are wrong, then send. Nothing goes out until you press Send.</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <button class="btn btn-primary btn-sm" id="btn-bf-preview" onclick="backfillInvites(false)">Preview</button>
-          <button class="btn btn-outline btn-sm" id="btn-bf-send" onclick="backfillInvites(true)" style="display:none;">Send them now</button>
-          <label style="font-size:12.5px;color:var(--muted);display:none;align-items:center;gap:5px;" id="bf-prune-wrap">
-            <input type="checkbox" id="bf-prune"> also delete duplicate invites
-          </label>
+          <button class="btn btn-primary btn-sm" id="btn-bf-preview" onclick="backfillInvites(false)">Review invitations</button>
+          <button class="btn btn-primary btn-sm" id="btn-bf-send" onclick="backfillInvites(true)" style="display:none;">Send selected</button>
           <span id="bf-msg" style="font-size:13px;color:var(--muted);"></span>
         </div>
         <div id="bf-out" style="margin-top:14px;font-size:13px;"></div>
@@ -383,73 +380,113 @@ async function clearDemo() {
 </script>
 <script>
 // ── invite backfill ─────────────────────────────────────
-// Two-step on purpose: preview builds the plan and sends nothing, and the
-// "Send them now" button only appears once a preview has been seen.
+// Review-then-send. "Review" builds the plan server-side and writes nothing.
+// Every row is individually deselectable (skip this time) or deletable (bin the
+// invitation for good, freeing its seat). Send mails only what stays ticked.
 let BF_PLAN=null;
 function bfEsc(x){ return String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function bfGroup(title, rows, tone, note){
+function bfDate(v){ try{ return new Date(v).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(_){ return ''; } }
+
+function bfGroup(key, title, rows, tone, note, selectable){
   if(!rows||!rows.length) return '';
-  return `<div style="margin-bottom:14px;">
-    <div style="font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:${tone};">${bfEsc(title)} (${rows.length})</div>
-    ${note?`<div style="font-size:12px;color:var(--muted);margin:2px 0 6px;">${bfEsc(note)}</div>`:''}
+  return `<div style="margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:${tone};">${bfEsc(title)} (${rows.length})</div>
+      ${selectable?`<button class="link-btn" style="font-size:12px;" onclick="bfToggleAll('${key}',true)">select all</button>
+      <button class="link-btn" style="font-size:12px;" onclick="bfToggleAll('${key}',false)">none</button>`:''}
+      ${key==='duplicates'?`<button class="link-btn" style="font-size:12px;color:var(--red);" onclick="bfDeleteGroup('duplicates')">delete all duplicates</button>`:''}
+    </div>
+    ${note?`<div style="font-size:12px;color:var(--muted);margin:3px 0 8px;">${bfEsc(note)}</div>`:''}
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      ${rows.map(r=>`<tr>
-        <td style="padding:4px 10px 4px 0;"><strong>${bfEsc(r.email)}</strong></td>
-        <td style="padding:4px 0;color:var(--muted);">${bfEsc(r.team)}</td>
+      ${rows.map(r=>`<tr data-bf-group="${key}">
+        <td style="padding:5px 8px 5px 0;width:22px;">${selectable?`<input type="checkbox" class="bf-chk" data-group="${key}" value="${r.id}" checked onchange="bfCount()">`:''}</td>
+        <td style="padding:5px 10px 5px 0;"><strong>${bfEsc(r.email)}</strong></td>
+        <td style="padding:5px 10px 5px 0;color:var(--muted);">${bfEsc(r.team)}</td>
+        <td style="padding:5px 10px 5px 0;color:var(--muted);font-size:12px;white-space:nowrap;">${r.expires_at?bfDate(r.expires_at):''}</td>
+        <td style="padding:5px 0;text-align:right;white-space:nowrap;">
+          <button class="link-btn" style="color:var(--red);font-size:12px;" onclick="bfDelete(${r.id},'${bfEsc(r.email).replace(/'/g,"\\'")}')">Delete</button>
+        </td>
       </tr>`).join('')}
     </table></div>`;
+}
+
+function bfToggleAll(group, on){
+  document.querySelectorAll(`.bf-chk[data-group="${group}"]`).forEach(c=>{ c.checked=on; });
+  bfCount();
+}
+function bfSelectedIds(){
+  return [...document.querySelectorAll('.bf-chk')].filter(c=>c.checked).map(c=>Number(c.value));
+}
+function bfCount(){
+  const n=bfSelectedIds().length;
+  const sd=document.getElementById('btn-bf-send');
+  sd.textContent = n ? `Send selected (${n})` : 'Send selected';
+  sd.disabled = !n;
+  sd.style.display = document.querySelectorAll('.bf-chk').length ? '' : 'none';
+}
+
+async function bfDelete(id, email){
+  if(!confirm(`Delete the invitation to ${email}?\n\nThe link stops working and the seat is freed. This can't be undone — the coach would need to invite them again.`)) return;
+  const r=await API.del('/api/admin/invitations/'+id);
+  if(r&&r.ok){ await backfillInvites(false); }
+  else { const d=r?await r.json().catch(()=>({})):{}; alert((d&&d.error)||'Could not delete that invitation.'); }
+}
+
+async function bfDeleteGroup(group){
+  const rows=(BF_PLAN&&BF_PLAN[group==='duplicates'?'duplicates':group])||[];
+  if(!rows.length) return;
+  if(!confirm(`Delete all ${rows.length} duplicate invitation(s)?\n\nThese are older invites to addresses that also have a newer one. The newer invite is untouched.`)) return;
+  for(const r of rows){ await API.del('/api/admin/invitations/'+r.id); }
+  await backfillInvites(false);
 }
 
 async function backfillInvites(send){
   const pv=document.getElementById('btn-bf-preview'), sd=document.getElementById('btn-bf-send');
   const msg=document.getElementById('bf-msg'), out=document.getElementById('bf-out');
-  const prune=document.getElementById('bf-prune').checked;
+  let ids=null;
 
   if(send){
-    const n=(BF_PLAN?BF_PLAN.willEmail.length+BF_PLAN.willRefreshAndEmail.length:0);
-    if(!n){ alert('Nothing to send.'); return; }
-    if(!confirm(`Email ${n} player${n===1?'':'s'} now? This sends real invitations to real people and cannot be undone.`)) return;
+    ids=bfSelectedIds();
+    if(!ids.length){ alert('Nothing is selected.'); return; }
+    if(!confirm(`Email ${ids.length} player${ids.length===1?'':'s'} now?\n\nThese are real invitations to real people and can't be recalled.`)) return;
   }
 
   pv.disabled=true; sd.disabled=true;
   msg.style.color='var(--muted)';
-  msg.textContent = send ? 'Sending… about 1 second per player, please leave this tab open.' : 'Checking…';
+  msg.textContent = send ? 'Sending… about a second each, leave this tab open.' : 'Loading…';
 
   try{
-    const r=await API.post('/api/admin/backfill-invites',{ send, prune });
+    const r=await API.post('/api/admin/backfill-invites', send?{ send:true, ids }:{ send:false });
     const d=r?await r.json():{};
     if(!r||!r.ok){ msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Backfill failed.'; pv.disabled=false; sd.disabled=false; return; }
 
     BF_PLAN=d;
     if(!d.total){
       msg.style.color='var(--green-mid)'; msg.textContent='✅ No pending invitations — nothing to backfill.';
-      out.innerHTML=''; sd.style.display='none'; document.getElementById('bf-prune-wrap').style.display='none';
-      pv.disabled=false; return;
+      out.innerHTML=''; sd.style.display='none'; pv.disabled=false; return;
     }
 
     out.innerHTML =
-      bfGroup('Will be emailed', d.willEmail, 'var(--green-mid)', 'Link is still valid and already holds a seat.') +
-      bfGroup('Expired — link refreshed, then emailed', d.willRefreshAndEmail, 'var(--gold)', 'Takes a seat back; the team has room.') +
-      bfGroup('Duplicates', d.duplicates, 'var(--muted)', 'Older invite to an address that also has a newer one. Only the newest is emailed.') +
-      bfGroup('Skipped — team is at its seat cap', d.noSeat, 'var(--red)', 'Expired and no seat free. Add seats or cancel a stale invite, then run this again.');
+      bfGroup('willEmail','Ready to send', d.willEmail, 'var(--green-mid)', 'Link is still valid and already holds a seat.', true) +
+      bfGroup('willRefreshAndEmail','Expired — link will be refreshed, then sent', d.willRefreshAndEmail, 'var(--gold)', 'Takes a seat back; the team has room for it.', true) +
+      bfGroup('duplicates','Duplicates — not sent', d.duplicates, 'var(--muted)', 'Older invite to an address that also has a newer one. Safe to delete.', false) +
+      bfGroup('noSeat','Skipped — team is at its seat cap', d.noSeat, 'var(--red)', 'Expired with no free seat. Add seats or delete a stale invite, then review again.', false);
 
     if(d.preview){
-      const n=d.willEmail.length+d.willRefreshAndEmail.length;
       msg.style.color='var(--muted)';
-      msg.textContent=`Preview only — nothing sent. ${n} player${n===1?'':'s'} would be emailed across ${d.teams} team${d.teams===1?'':'s'}.`;
-      sd.style.display = n ? '' : 'none';
-      document.getElementById('bf-prune-wrap').style.display = d.duplicates.length ? 'inline-flex' : 'none';
+      msg.textContent=`Nothing sent yet — ${d.total} pending across ${d.teams} team${d.teams===1?'':'s'}. Untick anyone who shouldn't get mail.`;
+      bfCount();
     } else {
       const res=d.results||{sent:[],failed:[]};
       msg.style.color = res.failed.length ? 'var(--gold)' : 'var(--green-mid)';
-      msg.textContent = `✅ ${res.sent.length} emailed${res.failed.length?`, ${res.failed.length} failed`:''}${res.pruned?`, ${res.pruned} duplicate row(s) removed`:''}.`;
+      msg.textContent = `✅ ${res.sent.length} emailed${res.failed.length?`, ${res.failed.length} failed`:''}.`;
       if(res.failed.length){
         out.innerHTML += `<div style="margin-top:10px;color:var(--red);font-size:12.5px;">Failed: ${res.failed.map(f=>`${bfEsc(f.email)} (${bfEsc(f.reason)})`).join(', ')}</div>`;
       }
       sd.style.display='none';
     }
   }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error: '+e.message; }
-  pv.disabled=false; sd.disabled=false;
+  pv.disabled=false;
 }
 
 async function recomputeRankings(){

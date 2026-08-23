@@ -112,10 +112,19 @@ router.post('/backfill-invites', async (req, res) => {
   try {
     const send = req.body.send === true;
     const prune = req.body.prune === true;
+    // When the console passes an explicit id list, only those are emailed -
+    // the admin curates the plan before anything goes out.
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Boolean) : null;
     const plan = await inviteBackfill.buildPlan(pool);
 
+    if (ids) {
+      const keep = new Set(ids);
+      plan.send = plan.send.filter(i => keep.has(i.id));
+      plan.refreshSend = plan.refreshSend.filter(i => keep.has(i.id));
+    }
+
     const summarize = list => list.map(i => ({
-      email: i.email, team: i.team_name, expires_at: i.expires_at, cap: i.cap,
+      id: i.id, email: i.email, team: i.team_name, expires_at: i.expires_at, cap: i.cap,
     }));
     const payload = {
       ok: true, send, total: plan.total, teams: plan.teams,
@@ -139,6 +148,25 @@ router.post('/backfill-invites', async (req, res) => {
   }
 });
 
+
+// DELETE /api/admin/invitations/:id — drop a pending invitation entirely.
+// Used from the backfill panel to bin invites that shouldn't be sent (wrong
+// address, player who left, duplicate). Frees the seat if it was holding one.
+// Refuses to touch an invitation that has already been accepted.
+router.delete('/invitations/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'DELETE FROM invitations WHERE id=$1 AND used_at IS NULL RETURNING email, team_id',
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'No pending invitation with that id' });
+    console.log(`[admin] deleted pending invitation ${req.params.id} (${rows[0].email})`);
+    res.json({ ok: true, email: rows[0].email });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete invitation' });
+  }
+});
 
 // ───────────────────────── Admin console (Phase 1) ─────────────────────────
 
