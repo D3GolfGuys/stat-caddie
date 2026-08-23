@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "mail:test": "node scripts/test-email.js"
+    "mail:test": "node scripts/test-email.js",
+    "invites:backfill": "node scripts/backfill-invites.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
