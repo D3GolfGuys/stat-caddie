@@ -129,7 +129,9 @@ router.post('/backfill-invites', async (req, res) => {
       noSeat: summarize(plan.noSeat),
     };
 
-    if (!send) return res.json({ ...payload, preview: true, ...inviteBackfill.jobSnapshot() });
+    const mailer = require('../services/mailer');
+    const mail = { configured: mailer.isConfigured(), from: mailer.fromAddress() };
+    if (!send) return res.json({ ...payload, preview: true, mail, ...inviteBackfill.jobSnapshot() });
 
     // Only what the operator ticked, matched against the sendable pool.
     const ids = Array.isArray(req.body.ids) ? new Set(req.body.ids.map(Number)) : null;
@@ -138,7 +140,7 @@ router.post('/backfill-invites', async (req, res) => {
 
     const started = inviteBackfill.start(pool, picked);
     if (!started.started) return res.status(409).json({ error: 'A backfill is already running', ...started });
-    res.json({ ...payload, preview: false, ...started });
+    res.json({ ...payload, preview: false, mail, ...started });
   } catch (err) {
     console.error(err);
     logError('admin/backfill-invites', err, { userId: req.user.id });
@@ -146,8 +148,14 @@ router.post('/backfill-invites', async (req, res) => {
   }
 });
 
-// GET /api/admin/backfill-invites/status — progress of the running/last job.
-router.get('/backfill-invites/status', (req, res) => res.json(inviteBackfill.jobSnapshot()));
+// GET /api/admin/backfill-invites/status — progress of the running/last job,
+// plus whether outgoing mail is actually configured on THIS server. Without the
+// second half, a completely unconfigured mailer looks identical to a quiet
+// failure from the console.
+router.get('/backfill-invites/status', (req, res) => {
+  const mailer = require('../services/mailer');
+  res.json({ ...inviteBackfill.jobSnapshot(), mail: { configured: mailer.isConfigured(), from: mailer.fromAddress() } });
+});
 
 // DELETE /api/admin/invitations/:id — drop a pending invitation entirely.
 // Used from the backfill panel to bin invites that shouldn't be sent (wrong

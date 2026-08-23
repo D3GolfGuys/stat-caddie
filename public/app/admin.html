@@ -142,6 +142,8 @@
           <button class="btn btn-primary btn-sm" id="btn-bf-send" onclick="backfillInvites(true)" style="display:none;">Send selected</button>
           <span id="bf-msg" style="font-size:13px;color:var(--muted);"></span>
         </div>
+        <div id="bf-warn" style="margin-top:12px;font-size:13px;display:none;background:#fde8ea;color:var(--red);border-radius:8px;padding:10px 14px;line-height:1.5;"></div>
+        <div id="bf-result" style="margin-top:12px;font-size:13px;display:none;border-radius:8px;padding:10px 14px;line-height:1.5;"></div>
         <div id="bf-out" style="margin-top:14px;font-size:13px;"></div>
       </div>
 
@@ -450,22 +452,50 @@ function bfProgress(j){
   msg.textContent = `Sending ${j.done} of ${j.total} (${pct}%)${j.currentEmail?` — ${j.currentEmail}`:''}`;
 }
 
+function bfShowResult(j){
+  const box=document.getElementById('bf-result');
+  const okAll = j.failed.length===0 && j.sent.length>0;
+  box.style.display='';
+  box.style.background = okAll ? '#e6f6ec' : (j.sent.length ? '#fff6e5' : '#fde8ea');
+  box.style.color      = okAll ? '#0a7d3c' : (j.sent.length ? '#8a5a00' : 'var(--red)');
+  const when = j.finishedAt ? new Date(j.finishedAt).toLocaleTimeString() : '';
+  let html = `<strong>Last run ${when}:</strong> ${j.sent.length} emailed, ${j.failed.length} failed.`;
+  if(j.sent.length) html += `<div style="margin-top:6px;font-size:12.5px;">Sent to: ${j.sent.map(bfEsc).join(', ')}</div>`;
+  if(j.failed.length){
+    const reasons=[...new Set(j.failed.map(f=>f.reason))];
+    html += `<div style="margin-top:6px;font-size:12.5px;">Failed: ${j.failed.map(f=>`${bfEsc(f.email)} <span style="opacity:.75">(${bfEsc(f.reason)}${f.error?': '+bfEsc(f.error):''})</span>`).join(', ')}</div>`;
+    if(reasons.includes('not_configured')||reasons.includes('nodemailer_missing')){
+      html += `<div style="margin-top:8px;font-weight:700;">The server has no working SMTP credentials, so nothing could be sent. Check SMTP_USER and SMTP_PASS on the app service in Railway, then redeploy.</div>`;
+    }
+    if(reasons.includes('send_failed')){
+      html += `<div style="margin-top:8px;font-weight:700;">Gmail rejected the send. The App Password is usually the cause — it must be a 16-character App Password on a mailbox with 2-Step Verification enabled.</div>`;
+    }
+  }
+  box.innerHTML=html;
+}
+
+function bfMailWarning(mail){
+  const w=document.getElementById('bf-warn');
+  if(mail && mail.configured===false){
+    w.style.display='';
+    w.innerHTML='<strong>Outgoing email is not configured on the server.</strong> Sending now would fail for every player. Set <code>SMTP_USER</code> and <code>SMTP_PASS</code> on the app service in Railway and let it redeploy, then reload this page.';
+  } else { w.style.display='none'; }
+}
+
 async function bfPoll(){
   try{
     const r=await API.get('/api/admin/backfill-invites/status');
     const d=r?await r.json():{};
+    bfMailWarning(d.mail);
     if(!d.job) return;
     if(d.running){ bfProgress(d.job); return; }
 
     clearInterval(BF_POLL); BF_POLL=null;
-    const j=d.job, msg=document.getElementById('bf-msg');
-    msg.style.color = j.failed.length ? 'var(--gold)' : 'var(--green-mid)';
-    msg.textContent = `✅ ${j.sent.length} emailed${j.failed.length?`, ${j.failed.length} failed`:''}.`;
-    if(j.failed.length){
-      document.getElementById('bf-out').insertAdjacentHTML('afterbegin',
-        `<div style="margin-bottom:12px;color:var(--red);font-size:12.5px;">Failed: ${j.failed.map(f=>`${bfEsc(f.email)} (${bfEsc(f.reason)})`).join(', ')}</div>`);
-    }
+    bfShowResult(d.job);
     document.getElementById('btn-bf-preview').disabled=false;
+    // Refresh the list so sent rows move into "already emailed". The result box
+    // above is deliberately left alone — it used to be overwritten by this
+    // refresh, which made a completed run look like it never happened.
     await backfillInvites(false);
   }catch(_){ /* transient poll error - keep polling */ }
 }
@@ -491,6 +521,8 @@ async function backfillInvites(send){
     if(!r||!r.ok){ msg.style.color='var(--red)'; msg.textContent=(d&&d.error)||'Backfill failed.'; pv.disabled=false; bfCount(); return; }
 
     BF_PLAN=d;
+    bfMailWarning(d.mail);
+    if(d.job && !d.running && !send) bfShowResult(d.job);
     if(!d.total){
       msg.style.color='var(--green-mid)'; msg.textContent='✅ No pending invitations — nothing to backfill.';
       document.getElementById('bf-out').innerHTML=''; sd.style.display='none'; pv.disabled=false; return;
