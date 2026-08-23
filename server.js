@@ -48,6 +48,10 @@ app.get('*', (req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
+// Surface a bad/missing App Password in the boot log rather than at 2am when a
+// coach's invite silently fails.
+require('./services/mailer').verifyTransport();
+
 initDB().then(() => {
   app.listen(PORT, () => console.log(`⛳ College Golf Metrics running on http://localhost:${PORT}`));
   // Nightly rankings recompute (in-process scheduler; disable with RANKINGS_AUTO=false)

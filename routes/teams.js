@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const { requireTeamAdmin } = require('../middleware/requireSubscription');
 const { findOrCreateSchool } = require('../services/schools');
+const { sendInviteEmail } = require('../services/emails');
 
 // Pricing / seat model (Option B — per-seat overflow).
 // 15 player seats are included in the Team plan; each additional player is
@@ -33,6 +34,11 @@ async function seatUsage(teamId) {
     price_per_seat: PRICE_PER_SEAT,
     monthly_addon: extra * PRICE_PER_SEAT,
   };
+}
+
+function inviteUrlFor(token) {
+  const base = (process.env.APP_URL || 'https://www.collegegolfmetrics.com').replace(/\/+$/, '');
+  return `${base}/accept-invite.html?token=${token}`;
 }
 
 router.use(requireAuth);
@@ -97,10 +103,52 @@ router.post('/invite', requireTeamAdmin, async (req, res) => {
     [req.user.team_id, email.toLowerCase(), token, expiresAt]
   );
 
-  const inviteUrl = `${process.env.APP_URL}/accept-invite.html?token=${token}`;
-  // In production, send this via email. For now, return it in the response.
+  const inviteUrl = inviteUrlFor(token);
+  // Email the player. A failed/disabled send must NOT fail the invite - the
+  // invitation row is already valid, and the coach still gets the link back to
+  // share by hand. `emailed` tells the UI which story to tell.
+  const { rows: teamRows } = await pool.query('SELECT name FROM teams WHERE id=$1', [req.user.team_id]);
+  const mail = await sendInviteEmail(email.toLowerCase(), {
+    teamName: teamRows[0]?.name,
+    coachName: req.user.name,
+    inviteUrl,
+    expiresDays: 7,
+  });
+
   const seatsAfter = await seatUsage(req.user.team_id); // recount incl. this pending invite
-  res.json({ ok: true, inviteUrl, seats: seatsAfter, note: 'Share this link with the player to join your team.' });
+  res.json({
+    ok: true, inviteUrl, seats: seatsAfter,
+    emailed: mail.sent, emailReason: mail.sent ? undefined : mail.reason,
+    note: mail.sent ? `Invitation emailed to ${email}.`
+                    : 'Email is not going out right now - share this link with the player instead.',
+  });
+});
+
+// POST /api/teams/invitations/:id/resend - re-send a pending invitation.
+// Reuses the existing token (so any copy already in the player's inbox still
+// works) and pushes the expiry back out to a fresh 7 days.
+router.post('/invitations/:id/resend', requireTeamAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM invitations WHERE id=$1 AND team_id=$2 AND used_at IS NULL',
+      [req.params.id, req.user.team_id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Pending invitation not found' });
+    const inv = rows[0];
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await pool.query('UPDATE invitations SET expires_at=$2 WHERE id=$1', [inv.id, expiresAt]);
+
+    const { rows: teamRows } = await pool.query('SELECT name FROM teams WHERE id=$1', [req.user.team_id]);
+    const inviteUrl = inviteUrlFor(inv.token);
+    const mail = await sendInviteEmail(inv.email, {
+      teamName: teamRows[0]?.name, coachName: req.user.name, inviteUrl, expiresDays: 7,
+    });
+    res.json({ ok: true, email: inv.email, inviteUrl, emailed: mail.sent, emailReason: mail.sent ? undefined : mail.reason });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to resend invitation' });
+  }
 });
 
 // POST /api/teams/seats  — add player seats beyond the included 15 (admin only)
@@ -124,7 +172,9 @@ router.post('/seats', requireTeamAdmin, async (req, res) => {
 // GET /api/teams/invitations  — list pending invites (admin only)
 router.get('/invitations', requireTeamAdmin, async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, email, expires_at, used_at, created_at FROM invitations WHERE team_id=$1 ORDER BY created_at DESC',
+    `SELECT id, email, expires_at, used_at, created_at, (expires_at <= NOW()) AS expired
+       FROM invitations WHERE team_id=$1 AND used_at IS NULL
+      ORDER BY created_at DESC`,
     [req.user.team_id]
   );
   res.json(rows);

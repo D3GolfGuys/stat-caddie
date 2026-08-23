@@ -4,6 +4,14 @@ const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const { findOrCreateSchool } = require('../services/schools');
+const crypto = require('crypto');
+const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emails');
+
+const RESET_TTL_MINUTES = 60;
+const hashToken = t => crypto.createHash('sha256').update(t).digest('hex');
+function appUrl() {
+  return (process.env.APP_URL || 'https://www.collegegolfmetrics.com').replace(/\/+$/, '');
+}
 
 function issueToken(userId, res) {
   const token = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
@@ -150,11 +158,77 @@ router.post('/accept-invite', async (req, res) => {
     );
     await pool.query('UPDATE invitations SET used_at = NOW() WHERE id = $1', [inv.id]);
 
+    // Welcome mail is best-effort - the account is already live either way.
+    const { rows: teamRows } = await pool.query('SELECT name FROM teams WHERE id = $1', [inv.team_id]);
+    sendWelcomeEmail(inv.email, { playerName: name, teamName: teamRows[0]?.name });
+
     issueToken(rows[0].id, res);
     res.status(201).json({ user: rows[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to accept invitation' });
+  }
+});
+
+// POST /api/auth/forgot-password  { email }
+// Always answers 200 with the same body, whether or not the address has an
+// account - otherwise this endpoint becomes a way to enumerate our users.
+router.post('/forgot-password', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const generic = { ok: true, message: 'If that email has an account, a reset link is on its way.' };
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  try {
+    const { rows } = await pool.query('SELECT id, name, email FROM users WHERE email = $1', [email]);
+    if (!rows.length) return res.json(generic);
+    const user = rows[0];
+
+    // One live token at a time - older unused ones are burned.
+    await pool.query('UPDATE password_resets SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL', [user.id]);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000);
+    await pool.query(
+      'INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [user.id, hashToken(token), expiresAt]
+    );
+
+    await sendPasswordResetEmail(user.email, {
+      name: user.name,
+      resetUrl: `${appUrl()}/reset-password.html?token=${token}`,
+      expiresMinutes: RESET_TTL_MINUTES,
+    });
+    return res.json(generic);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Could not start password reset' });
+  }
+});
+
+// POST /api/auth/reset-password  { token, password }
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'Token and password required' });
+  if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT pr.id, pr.user_id, u.email, u.name
+         FROM password_resets pr JOIN users u ON u.id = pr.user_id
+        WHERE pr.token_hash = $1 AND pr.used_at IS NULL AND pr.expires_at > NOW()`,
+      [hashToken(String(token))]
+    );
+    if (!rows.length) return res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
+    const reset = rows[0];
+
+    const password_hash = await bcrypt.hash(password, 12);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, reset.user_id]);
+    await pool.query('UPDATE password_resets SET used_at = NOW() WHERE id = $1', [reset.id]);
+
+    return res.json({ ok: true, email: reset.email });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Could not reset password' });
   }
 });
 

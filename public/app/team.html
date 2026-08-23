@@ -154,6 +154,15 @@
         </table>
       </div>
 
+      <!-- Pending invitations -->
+      <div class="table-card" id="invites-card" style="margin-bottom:16px;display:none;">
+        <div class="table-card-header">
+          <h3>Pending Invitations</h3>
+          <span id="invites-count" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <div id="invites-body" style="padding:0 4px 4px;"></div>
+      </div>
+
       <!-- Team Metrics (matches the PDF team page) -->
       <div class="table-card" style="margin-bottom:16px;">
         <div class="table-card-header"><h3>Team Metrics</h3></div>
@@ -307,8 +316,15 @@ async function sendInvite(){
   if(!r) return;
   const data=await r.json();
   if(r.ok){
-    out.innerHTML=`✅ Invite ready. Share this link with ${email}:<br><code style="word-break:break-all;font-size:11px;">${data.inviteUrl}</code>`;
-    out.style.color='var(--green-mid)';
+    if(data.emailed){
+      out.innerHTML=`✅ Invitation emailed to <strong>${email}</strong>. It expires in 7 days — you can resend it from Pending Invitations below.`;
+      out.style.color='var(--green-mid)';
+    } else {
+      // The invite is valid either way; email just didn't go out. Say so plainly
+      // rather than letting the coach assume the player was contacted.
+      out.innerHTML=`⚠️ Invite created, but the email could not be sent${data.emailReason?` (${data.emailReason})`:''}. Share this link with ${email} directly:<br><code style="word-break:break-all;font-size:11px;">${data.inviteUrl}</code>`;
+      out.style.color='var(--gold)';
+    }
     document.getElementById('invite-email').value='';
     await load();
   } else if(data.code==='SEATS_REQUIRED'){
@@ -546,12 +562,53 @@ async function loadTeamScores(){
 }
 
 // ── load ────────────────────────────────────────────────
+// ── pending invitations ─────────────────────────────────
+function fmtInvDate(v){ try{ return new Date(v).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(_){ return ''; } }
+
+async function loadInvites(){
+  const card=document.getElementById('invites-card');
+  const r=await API.get('/api/teams/invitations');
+  if(!r||!r.ok){ card.style.display='none'; return; }
+  const list=await r.json();
+  if(!list.length){ card.style.display='none'; return; }
+  card.style.display='';
+  document.getElementById('invites-count').textContent=`${list.length} awaiting sign-up`;
+  document.getElementById('invites-body').innerHTML=list.map(inv=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--border);flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <strong style="font-size:14px;">${inv.email}</strong>
+        <div style="font-size:12px;color:${inv.expired?'var(--red)':'var(--muted)'};margin-top:2px;">
+          ${inv.expired?'Expired':'Expires'} ${fmtInvDate(inv.expires_at)} · sent ${fmtInvDate(inv.created_at)}
+        </div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="resendInvite(${inv.id},this)">Resend</button>
+      <button class="link-btn" style="color:var(--red);" onclick="cancelInvite(${inv.id},'${String(inv.email).replace(/'/g,"\\'")}')">Cancel</button>
+    </div>`).join('');
+}
+
+async function resendInvite(id, btn){
+  const label=btn.textContent; btn.disabled=true; btn.textContent='Sending…';
+  const r=await API.post(`/api/teams/invitations/${id}/resend`);
+  const d=r?await r.json().catch(()=>({})):{};
+  btn.disabled=false;
+  if(r&&r.ok&&d.emailed){ btn.textContent='Sent ✓'; setTimeout(()=>{btn.textContent=label;},2500); }
+  else { btn.textContent=label; alert(d.emailed===false ? `Invite is valid but the email didn't send${d.emailReason?` (${d.emailReason})`:''}. Share this link instead:\n\n${d.inviteUrl||''}` : (d.error||'Could not resend.')); }
+  await loadInvites();
+}
+
+async function cancelInvite(id, email){
+  if(!confirm(`Cancel the invitation to ${email}? The link stops working and the seat is freed.`)) return;
+  await API.del(`/api/teams/invitations/${id}`);
+  await load();
+}
+
 async function load(){
   const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
   if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; SEATS=d.seats||null; if(TEAM){ document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; const seg=[TEAM.division,TEAM.conference].filter(Boolean).join(' · '); document.getElementById('team-sub').textContent = seg ? seg + ' — click a player to drill into their game.' : 'Set your division in ⚙ Team Settings to unlock rankings — click a player to drill in.'; } }
   if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
   renderTeamSummary();
   renderRoster();
+  loadInvites();
   loadTeamRankings();
   loadTeamScores();
   if(selectedPlayer && MEMBERS.some(m=>m.id===selectedPlayer)) openDetail(selectedPlayer);

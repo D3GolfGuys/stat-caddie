@@ -428,6 +428,20 @@ const schema = `
   ALTER TABLE rounds ADD COLUMN IF NOT EXISTS qualifying_event_id INTEGER REFERENCES qualifying_events(id) ON DELETE SET NULL;
   CREATE INDEX IF NOT EXISTS idx_rounds_qualifying_event ON rounds(qualifying_event_id);
 
+  -- ===================================================================
+  --  Password resets - single-use, short-lived tokens. Only a SHA-256 hash of
+  --  the token is stored, so a database leak can't be used to seize accounts.
+  -- ===================================================================
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    token_hash VARCHAR(64) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
+
   CREATE TABLE IF NOT EXISTS error_log (
     id SERIAL PRIMARY KEY,
     source VARCHAR(120),
