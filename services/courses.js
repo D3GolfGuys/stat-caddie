@@ -77,6 +77,16 @@ async function probe(query = 'pebble') {
 }
 
 // ── normalization ────────────────────────────────────────────────────────────
+// The vendor is not consistent about shape: tees.male has been seen as an
+// array, as an object keyed by tee name, and absent entirely; holes likewise.
+// One oddly-shaped course used to throw and take down the whole search
+// ("(t.male || []).forEach is not a function"), so coerce rather than assume.
+function asArray(v) {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === 'object') return Object.values(v);
+  return [];
+}
+
 function locationText(loc) {
   if (!loc || typeof loc !== 'object') return null;
   return [loc.city, loc.state, loc.country].filter(Boolean).join(', ') || loc.address || null;
@@ -84,14 +94,14 @@ function locationText(loc) {
 
 // Flatten one vendor tee into our shape. Hole numbers are 1-based by position.
 function normalizeTee(tee, gender) {
-  const holes = (tee.holes || []).map((h, i) => ({
+  const holes = asArray(tee.holes).map((h, i) => ({
     hole: i + 1,
-    par: h.par != null ? Number(h.par) : null,
-    handicap: h.handicap != null ? Number(h.handicap) : null,
-    yardage: h.yardage != null ? Number(h.yardage) : (h.yards != null ? Number(h.yards) : null),
+    par: h && h.par != null ? Number(h.par) : null,
+    handicap: h && h.handicap != null ? Number(h.handicap) : null,
+    yardage: h && h.yardage != null ? Number(h.yardage) : (h && h.yards != null ? Number(h.yards) : null),
   }));
   return {
-    teeName: tee.tee_name || tee.name || 'Tee',
+    teeName: (tee && (tee.tee_name || tee.name)) || 'Tee',
     gender,
     parTotal: tee.par_total != null ? Number(tee.par_total) : null,
     yardageTotal: tee.total_yards != null ? Number(tee.total_yards) : null,
@@ -103,10 +113,15 @@ function normalizeTee(tee, gender) {
 
 // All tees for a course, men's then women's, richest (most holes) first.
 function normalizeTees(course) {
-  const t = course.tees || {};
+  const t = (course && course.tees) || {};
   const out = [];
-  (t.male   || []).forEach((tee) => out.push(normalizeTee(tee, 'male')));
-  (t.female || []).forEach((tee) => out.push(normalizeTee(tee, 'female')));
+  // Some responses put every tee in one flat list with no gender split.
+  if (Array.isArray(t)) {
+    asArray(t).forEach((tee) => { if (tee) out.push(normalizeTee(tee, 'male')); });
+  } else {
+    asArray(t.male).forEach((tee) => { if (tee) out.push(normalizeTee(tee, 'male')); });
+    asArray(t.female).forEach((tee) => { if (tee) out.push(normalizeTee(tee, 'female')); });
+  }
   return out.filter((tee) => tee.holes.length > 0);
 }
 
@@ -154,12 +169,17 @@ async function searchCourses(query) {
     if (course && course.id != null) {
       try { await cacheCourse(course); } catch (e) { /* cache best-effort */ }
     }
+    // A single malformed course must never fail the search; degrade that row
+    // to zero tees and keep the rest of the results usable.
+    let teeCount = 0;
+    try { teeCount = normalizeTees(course).length; }
+    catch (e) { console.warn('course', course && course.id, 'has unreadable tees:', e.message); }
     results.push({
       externalId: String(course.id),
       clubName: course.club_name || null,
       courseName: course.course_name || null,
       location: locationText(course.location),
-      teeCount: normalizeTees(course).length,
+      teeCount,
     });
   }
   return results;
