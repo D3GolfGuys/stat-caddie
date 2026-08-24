@@ -534,7 +534,10 @@ async function backfillInvites(send){
 
     if(d.preview){
       msg.style.color='var(--muted)';
-      msg.textContent=`Nothing sent yet — ${d.total} pending across ${d.teams} team${d.teams===1?'':'s'}. Untick anyone who shouldn't get mail.`;
+      const unsent=(d.ready||[]).length+(d.refresh||[]).length;
+      msg.textContent = unsent
+        ? `${unsent} not yet emailed, of ${d.total} awaiting sign-up across ${d.teams} team${d.teams===1?'':'s'}. Untick anyone who shouldn't get mail.`
+        : `All ${d.total} invitation${d.total===1?' has':'s have'} been emailed — none left to send. They stay listed until the players sign up.`;
       // A job may still be running from a previous click (e.g. after a reload).
       if(d.running){ sd.style.display='none'; if(!BF_POLL) BF_POLL=setInterval(bfPoll,1500); bfPoll(); }
       else pv.disabled=false;
