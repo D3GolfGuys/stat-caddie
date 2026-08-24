@@ -1443,7 +1443,12 @@ async function searchCourses(q){
   try {
     const r = await fetch('/api/courses/search?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
     if (r.status === 503){ hideCResults(); hint.textContent = 'Course lookup isn’t set up yet — enter hole info manually.'; return; }
-    if (!r.ok) throw new Error('lookup');
+    if (!r.ok) {
+      // Report what actually came back. "unavailable" alone can't tell a 404
+      // (wrong host / route missing) from a 401 (session) or a 502 (vendor).
+      const body = await r.text().catch(() => '');
+      throw new Error('HTTP ' + r.status + (body ? ' — ' + body.slice(0, 120) : ''));
+    }
     const list = await r.json();
     if (!Array.isArray(list) || !list.length){
       hideCResults();
@@ -1463,7 +1468,7 @@ async function searchCourses(q){
     box.querySelectorAll('.tlink-item').forEach(el => { el.onclick = () => pickCourse(el.dataset); });
   } catch (e) {
     hideCResults();
-    hint.textContent = 'Course lookup unavailable — enter hole info manually.';
+    hint.textContent = 'Course lookup unavailable [' + (e && e.message ? e.message : 'unknown') + '] — enter hole info manually.';
   }
 }
 
@@ -1483,7 +1488,10 @@ async function loadTees(externalId){
   hint.textContent = 'Loading tees…';
   try {
     const r = await fetch('/api/courses/' + encodeURIComponent(externalId) + '/tees', { credentials: 'same-origin' });
-    if (!r.ok) throw new Error('tees');
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      throw new Error('HTTP ' + r.status + (body ? ' — ' + body.slice(0, 120) : ''));
+    }
     _cTees = await r.json();
     if (!Array.isArray(_cTees) || !_cTees.length){ hint.textContent = 'No tee data for this course — enter hole info manually.'; picker.style.display='none'; return; }
     picker.innerHTML = _cTees.map((t, i) => {
@@ -1497,7 +1505,7 @@ async function loadTees(externalId){
     onTeePick();
   } catch (e) {
     picker.style.display = 'none';
-    hint.textContent = 'Couldn’t load tees — enter hole info manually.';
+    hint.textContent = 'Couldn’t load tees [' + (e && e.message ? e.message : 'unknown') + '] — enter hole info manually.';
   }
 }
 
