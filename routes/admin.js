@@ -157,6 +157,18 @@ router.get('/backfill-invites/status', (req, res) => {
   res.json({ ...inviteBackfill.jobSnapshot(), mail: { configured: mailer.isConfigured(), from: mailer.fromAddress() } });
 });
 
+// GET /api/admin/course-api-check — live call to the course vendor, reporting
+// its verbatim status. "Course search is down" is otherwise indistinguishable
+// from a missing key, a revoked key and a blown quota.
+router.get('/course-api-check', async (req, res) => {
+  try {
+    res.json(await require('../services/courses').probe());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Probe failed: ' + err.message });
+  }
+});
+
 // DELETE /api/admin/invitations/:id — drop a pending invitation entirely.
 // Used from the backfill panel to bin invites that shouldn't be sent (wrong
 // address, player who left, duplicate). Frees the seat if it was holding one.

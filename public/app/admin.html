@@ -147,6 +147,17 @@
         <div id="bf-out" style="margin-top:14px;font-size:13px;"></div>
       </div>
 
+      <!-- Course lookup health -->
+      <div class="panel">
+        <h3>Course lookup</h3>
+        <p class="page-sub" style="margin:0 0 12px;">Pre-fills par, stroke index and yardage on the capture screens. When this fails, players fall back to entering holes by hand — nothing breaks, but it's worth knowing.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="btn-course-check" onclick="checkCourseApi()">Test course lookup</button>
+          <span id="course-msg" style="font-size:13px;color:var(--muted);"></span>
+        </div>
+        <div id="course-detail" style="margin-top:10px;font-size:12.5px;color:var(--muted);display:none;"></div>
+      </div>
+
       <!-- Rankings -->
       <div class="panel">
         <h3>Rankings</h3>
@@ -548,6 +559,42 @@ async function backfillInvites(send){
       BF_POLL=setInterval(bfPoll,1500); bfPoll();
     }
   }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error: '+e.message; pv.disabled=false; }
+}
+
+// ── course lookup health ────────────────────────────────
+async function checkCourseApi(){
+  const btn=document.getElementById('btn-course-check'), msg=document.getElementById('course-msg');
+  const det=document.getElementById('course-detail');
+  btn.disabled=true; msg.style.color='var(--muted)'; msg.textContent='Calling the course database…'; det.style.display='none';
+  try{
+    const r=await API.get('/api/admin/course-api-check');
+    const d=r?await r.json():{};
+    if(d.ok){
+      msg.style.color='var(--green-mid)';
+      msg.textContent=`✅ Working — ${d.results} result${d.results===1?'':'s'} in ${d.ms}ms.`;
+      det.style.display='none';
+    } else {
+      msg.style.color='var(--red)';
+      if(d.reason==='no_api_key'){
+        msg.textContent='✖ No API key set.';
+        det.innerHTML='Set <code>GOLF_COURSE_API_KEY</code> on the app service in Railway, then redeploy.';
+      } else if(d.reason==='network'){
+        msg.textContent='✖ Could not reach the course database.';
+        det.innerHTML=`Host ${d.host} — ${d.error||''}`;
+      } else if(d.status===401||d.status===403){
+        msg.textContent=`✖ Key rejected (HTTP ${d.status}).`;
+        det.innerHTML=`The key ending <code>${d.keyTail}</code> is expired, revoked or wrong. Generate a new one at golfcourseapi.com and update <code>GOLF_COURSE_API_KEY</code> in Railway.<br>Vendor said: <code>${(d.body||'').replace(/[<>]/g,'')}</code>`;
+      } else if(d.status===429){
+        msg.textContent='✖ Rate limited (HTTP 429).';
+        det.innerHTML=`The free tier's quota is used up — it resets on the vendor's schedule, usually daily. Cached courses still pre-fill; only new lookups fail.<br>Vendor said: <code>${(d.body||'').replace(/[<>]/g,'')}</code>`;
+      } else {
+        msg.textContent=`✖ Vendor returned HTTP ${d.status}.`;
+        det.innerHTML=`<code>${(d.body||'').replace(/[<>]/g,'')}</code>`;
+      }
+      det.style.display='';
+    }
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='Network error: '+e.message; }
+  btn.disabled=false;
 }
 
 async function recomputeRankings(){

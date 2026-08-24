@@ -45,6 +45,36 @@ async function apiGet(path) {
   return res.json();
 }
 
+/**
+ * Live health probe. Unlike searchCourses() this never throws and never
+ * normalizes - it reports exactly what the vendor said, so a 401 (key revoked)
+ * can be told apart from a 429 (quota) without reading server logs.
+ */
+async function probe() {
+  if (!isConfigured()) return { configured: false, ok: false, reason: 'no_api_key' };
+  const started = Date.now();
+  try {
+    const res = await fetch(BASE_URL + '/v1/search?search_query=pebble', {
+      headers: { Authorization: 'Key ' + API_KEY, Accept: 'application/json' },
+    });
+    const text = await res.text().catch(() => '');
+    let count = null;
+    try { count = (JSON.parse(text).courses || []).length; } catch (_) {}
+    return {
+      configured: true,
+      ok: res.ok,
+      status: res.status,
+      ms: Date.now() - started,
+      results: count,
+      body: res.ok ? undefined : text.slice(0, 300),
+      host: BASE_URL,
+      keyTail: API_KEY.length > 4 ? '…' + API_KEY.slice(-4) : '(short)',
+    };
+  } catch (err) {
+    return { configured: true, ok: false, reason: 'network', error: err.message, host: BASE_URL };
+  }
+}
+
 // ── normalization ────────────────────────────────────────────────────────────
 function locationText(loc) {
   if (!loc || typeof loc !== 'object') return null;
@@ -166,4 +196,5 @@ async function getCourseTees(externalId) {
   return normalizeTees(course);
 }
 
-module.exports = { isConfigured, searchCourses, getCourseTees };
+module.exports = {
+  probe, isConfigured, searchCourses, getCourseTees };
