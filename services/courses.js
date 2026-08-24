@@ -50,11 +50,11 @@ async function apiGet(path) {
  * normalizes - it reports exactly what the vendor said, so a 401 (key revoked)
  * can be told apart from a 429 (quota) without reading server logs.
  */
-async function probe() {
+async function probe(query = 'pebble') {
   if (!isConfigured()) return { configured: false, ok: false, reason: 'no_api_key' };
   const started = Date.now();
   try {
-    const res = await fetch(BASE_URL + '/v1/search?search_query=pebble', {
+    const res = await fetch(BASE_URL + '/v1/search?search_query=' + encodeURIComponent(query), {
       headers: { Authorization: 'Key ' + API_KEY, Accept: 'application/json' },
     });
     const text = await res.text().catch(() => '');
@@ -68,6 +68,7 @@ async function probe() {
       results: count,
       body: res.ok ? undefined : text.slice(0, 300),
       host: BASE_URL,
+      query,
       keyTail: API_KEY.length > 4 ? '…' + API_KEY.slice(-4) : '(short)',
     };
   } catch (err) {

@@ -24,8 +24,14 @@ router.get('/search', async (req, res) => {
   try {
     res.json(await courses.searchCourses(q));
   } catch (e) {
-    console.error('course search failed:', e.message);
-    res.status(502).json({ error: 'Course lookup failed' });
+    // The underlying message carries the vendor's status and body, which is the
+    // only thing that distinguishes a revoked key from a rate limit from a bad
+    // response for one particular query. It went to the server log only, so
+    // every one of these looked identical from the capture screen. The caller is
+    // signed in and the text contains no credentials.
+    console.error('course search failed:', q, e.message);
+    try { require('../services/errorLog').logError('courses/search', e, { userId: req.user && req.user.id }); } catch (_) {}
+    res.status(502).json({ error: 'Course lookup failed', detail: e.message, query: q });
   }
 });
 
@@ -39,8 +45,9 @@ router.get('/:id/tees', async (req, res) => {
     if (!tees || !tees.length) return res.status(404).json({ error: 'Course not found' });
     res.json(tees);
   } catch (e) {
-    console.error('course tees failed:', e.message);
-    res.status(502).json({ error: 'Course lookup failed' });
+    console.error('course tees failed:', req.params.id, e.message);
+    try { require('../services/errorLog').logError('courses/tees', e, { userId: req.user && req.user.id }); } catch (_) {}
+    res.status(502).json({ error: 'Course lookup failed', detail: e.message });
   }
 });
 

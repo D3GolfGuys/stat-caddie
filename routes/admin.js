@@ -162,7 +162,7 @@ router.get('/backfill-invites/status', (req, res) => {
 // from a missing key, a revoked key and a blown quota.
 router.get('/course-api-check', async (req, res) => {
   try {
-    res.json(await require('../services/courses').probe());
+    res.json(await require('../services/courses').probe(req.query.q || 'pebble'));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Probe failed: ' + err.message });
