@@ -2,15 +2,17 @@ const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
-const { requireTeamAdmin } = require('../middleware/requireSubscription');
+const { requireTeamAdmin, requireCoach } = require('../middleware/requireSubscription');
+const { ASSISTANT, PLAYER, PLAYER_SQL, isHeadCoach } = require('../services/roles');
 const { findOrCreateSchool } = require('../services/schools');
 const { sendInviteEmail } = require('../services/emails');
 
 // Pricing / seat model (Option B — per-seat overflow).
 // 15 player seats are included in the Team plan; each additional player is
 // billed at $2/mo. Billing is reconciled manually during beta — adding seats
-// simply raises the team's cap so the coach can keep inviting. The coach
-// (team_admin) does NOT consume a player seat.
+// simply raises the team's cap so the coach can keep inviting. Coaching staff
+// (head coach AND assistant coaches) do NOT consume a player seat — seats are
+// a player count, and staff are free and unlimited.
 const INCLUDED_SEATS = 15;
 const PRICE_PER_SEAT = 2;
 
@@ -18,8 +20,12 @@ const PRICE_PER_SEAT = 2;
 async function seatUsage(teamId) {
   const [{ rows: t }, { rows: p }, { rows: inv }] = await Promise.all([
     pool.query('SELECT max_members FROM teams WHERE id=$1', [teamId]),
-    pool.query("SELECT COUNT(*) FROM users WHERE team_id=$1 AND role='team_member'", [teamId]),
-    pool.query('SELECT COUNT(*) FROM invitations WHERE team_id=$1 AND used_at IS NULL AND expires_at > NOW()', [teamId]),
+    pool.query('SELECT COUNT(*) FROM users WHERE team_id=$1 AND role=$2', [teamId, PLAYER]),
+    // Only PLAYER invites hold a seat while they're pending; staff invites are free.
+    pool.query(
+      "SELECT COUNT(*) FROM invitations WHERE team_id=$1 AND used_at IS NULL AND expires_at > NOW() AND COALESCE(role,$2)=$2",
+      [teamId, PLAYER]
+    ),
   ]);
   const cap = t[0]?.max_members || INCLUDED_SEATS;
   const players = parseInt(p[0].count, 10);
@@ -53,7 +59,17 @@ router.get('/me', async (req, res) => {
     [req.user.team_id]
   );
   const seats = await seatUsage(req.user.team_id);
-  res.json({ team: teamRows[0], members, seats });
+  // `can` is the single source of truth for what this coach may do, so the
+  // dashboard shows the same set of controls the API will actually accept.
+  const headCoach = isHeadCoach(req.user);
+  res.json({
+    team: teamRows[0], members, seats,
+    can: {
+      manageRoster: headCoach,   // invite / remove people
+      manageSeats: headCoach,    // buy overflow seats
+      manageTeam: headCoach,     // rename, division, school
+    },
+  });
 });
 
 // PUT /api/teams/me  — update team name + ranking segment (admin only)
@@ -75,14 +91,20 @@ router.put('/me', requireTeamAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/teams/invite  — invite a player by email (admin only)
+// POST /api/teams/invite  — invite a player or an assistant coach (head coach only).
+// `role` is 'team_member' (default) or 'team_assistant'. Assistant invites skip
+// the seat check entirely: coaching staff is free and unlimited.
 router.post('/invite', requireTeamAdmin, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
 
-  // Seat check — players + pending invites must stay within the team's cap.
+  const role = req.body.role === ASSISTANT ? ASSISTANT : PLAYER;
+  const isStaff = role === ASSISTANT;
+
+  // Seat check — players + pending player invites must stay within the cap.
+  // Staff never count, so an at-cap team can still add an assistant.
   const seats = await seatUsage(req.user.team_id);
-  if (seats.remaining < 1) {
+  if (!isStaff && seats.remaining < 1) {
     return res.status(403).json({
       code: 'SEATS_REQUIRED',
       error: `You've used all ${seats.cap} player seats. Add seats at $${PRICE_PER_SEAT}/player/mo to invite more players.`,
@@ -99,8 +121,8 @@ router.post('/invite', requireTeamAdmin, async (req, res) => {
   const token = uuidv4();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
   await pool.query(
-    'INSERT INTO invitations (team_id, email, token, expires_at) VALUES ($1,$2,$3,$4) ON CONFLICT (token) DO NOTHING',
-    [req.user.team_id, email.toLowerCase(), token, expiresAt]
+    'INSERT INTO invitations (team_id, email, token, expires_at, role) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (token) DO NOTHING',
+    [req.user.team_id, email.toLowerCase(), token, expiresAt, role]
   );
 
   const inviteUrl = inviteUrlFor(token);
@@ -113,14 +135,16 @@ router.post('/invite', requireTeamAdmin, async (req, res) => {
     coachName: req.user.name,
     inviteUrl,
     expiresDays: 7,
+    role,
   });
 
   const seatsAfter = await seatUsage(req.user.team_id); // recount incl. this pending invite
+  const who = isStaff ? 'assistant coach' : 'player';
   res.json({
-    ok: true, inviteUrl, seats: seatsAfter,
+    ok: true, inviteUrl, seats: seatsAfter, role,
     emailed: mail.sent, emailReason: mail.sent ? undefined : mail.reason,
     note: mail.sent ? `Invitation emailed to ${email}.`
-                    : 'Email is not going out right now - share this link with the player instead.',
+                    : `Email is not going out right now - share this link with the ${who} instead.`,
   });
 });
 
@@ -143,8 +167,9 @@ router.post('/invitations/:id/resend', requireTeamAdmin, async (req, res) => {
     const inviteUrl = inviteUrlFor(inv.token);
     const mail = await sendInviteEmail(inv.email, {
       teamName: teamRows[0]?.name, coachName: req.user.name, inviteUrl, expiresDays: 7,
+      role: inv.role || PLAYER,
     });
-    res.json({ ok: true, email: inv.email, inviteUrl, emailed: mail.sent, emailReason: mail.sent ? undefined : mail.reason });
+    res.json({ ok: true, email: inv.email, role: inv.role || PLAYER, inviteUrl, emailed: mail.sent, emailReason: mail.sent ? undefined : mail.reason });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to resend invitation' });
@@ -172,7 +197,8 @@ router.post('/seats', requireTeamAdmin, async (req, res) => {
 // GET /api/teams/invitations  — list pending invites (admin only)
 router.get('/invitations', requireTeamAdmin, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, email, expires_at, used_at, created_at, (expires_at <= NOW()) AS expired
+    `SELECT id, email, COALESCE(role, '${PLAYER}') AS role, expires_at, used_at, created_at,
+            (expires_at <= NOW()) AS expired
        FROM invitations WHERE team_id=$1 AND used_at IS NULL
       ORDER BY created_at DESC`,
     [req.user.team_id]
@@ -186,18 +212,24 @@ router.delete('/invitations/:id', requireTeamAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/teams/members/:userId  — remove a team member (admin only)
+// DELETE /api/teams/members/:userId  — remove a player or an assistant coach
+// (head coach only). The head coach is deliberately not removable here: the
+// team record points at them, so losing them would orphan the team.
 router.delete('/members/:userId', requireTeamAdmin, async (req, res) => {
+  if (String(req.params.userId) === String(req.user.id)) {
+    return res.status(400).json({ error: "You can't remove yourself from your own team." });
+  }
   const { rowCount } = await pool.query(
-    'UPDATE users SET team_id=NULL, role=\'individual\', subscription_status=\'inactive\' WHERE id=$1 AND team_id=$2 AND role=\'team_member\'',
-    [req.params.userId, req.user.team_id]
+    `UPDATE users SET team_id=NULL, role='individual', subscription_status='inactive'
+      WHERE id=$1 AND team_id=$2 AND role IN ($3, $4)`,
+    [req.params.userId, req.user.team_id, PLAYER, ASSISTANT]
   );
   if (!rowCount) return res.status(404).json({ error: 'Member not found' });
   res.json({ ok: true });
 });
 
-// GET /api/teams/rounds  — all rounds for the team (admin only)
-router.get('/rounds', requireTeamAdmin, async (req, res) => {
+// GET /api/teams/rounds  — all rounds for the team (any coach)
+router.get('/rounds', requireCoach, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT r.id, u.id AS user_id, r.player_name, u.name as user_name, r.tournament, r.round_num, r.round_date, r.course_name, r.summary, r.created_at
      FROM rounds r JOIN users u ON u.id = r.user_id
@@ -208,9 +240,9 @@ router.get('/rounds', requireTeamAdmin, async (req, res) => {
 });
 
 
-// ── Course history (coach): performance over time + hole difficulty ──────────
+// ── Course history (any coach): performance over time + hole difficulty ─────
 // GET /api/teams/courses — courses the team has played, with counts.
-router.get('/courses', requireTeamAdmin, async (req, res) => {
+router.get('/courses', requireCoach, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT r.course_name AS course, COUNT(DISTINCT r.id)::int AS rounds,
@@ -218,7 +250,7 @@ router.get('/courses', requireTeamAdmin, async (req, res) => {
               to_char(MIN(r.round_date),'YYYY-MM-DD') AS first_played,
               to_char(MAX(r.round_date),'YYYY-MM-DD') AS last_played
          FROM rounds r JOIN users u ON u.id = r.user_id
-        WHERE u.team_id = $1 AND u.role <> 'team_admin'
+        WHERE u.team_id = $1 AND ${PLAYER_SQL}
           AND r.course_name IS NOT NULL AND r.course_name <> ''
         GROUP BY r.course_name ORDER BY rounds DESC, r.course_name`, [req.user.team_id]);
     res.json({ courses: rows });
@@ -226,7 +258,7 @@ router.get('/courses', requireTeamAdmin, async (req, res) => {
 });
 
 // GET /api/teams/course-holes?course= — per-hole difficulty across all team rounds there.
-router.get('/course-holes', requireTeamAdmin, async (req, res) => {
+router.get('/course-holes', requireCoach, async (req, res) => {
   const course = req.query.course;
   if (!course) return res.status(400).json({ error: 'course required' });
   try {
@@ -242,14 +274,14 @@ router.get('/course-holes', requireTeamAdmin, async (req, res) => {
          FROM round_holes rh
          JOIN rounds r ON r.id = rh.round_id
          JOIN users u ON u.id = r.user_id
-        WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.course_name = $2 AND rh.score IS NOT NULL
+        WHERE u.team_id = $1 AND ${PLAYER_SQL} AND r.course_name = $2 AND rh.score IS NOT NULL
         GROUP BY rh.hole_num ORDER BY rh.hole_num`, [req.user.team_id, course]);
     res.json({ course, holes: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load hole history' }); }
 });
 
 // GET /api/teams/course-timeline?course= — team scoring per visit over time.
-router.get('/course-timeline', requireTeamAdmin, async (req, res) => {
+router.get('/course-timeline', requireCoach, async (req, res) => {
   const course = req.query.course;
   if (!course) return res.status(400).json({ error: 'course required' });
   try {
@@ -259,7 +291,7 @@ router.get('/course-timeline', requireTeamAdmin, async (req, res) => {
               ROUND(AVG((r.summary->>'totalScore')::numeric), 1) AS avg_score,
               ROUND(AVG((r.summary->>'vspar')::numeric), 1) AS avg_vs_par
          FROM rounds r JOIN users u ON u.id = r.user_id
-        WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.course_name = $2
+        WHERE u.team_id = $1 AND ${PLAYER_SQL} AND r.course_name = $2
           AND r.summary IS NOT NULL AND r.summary ? 'totalScore'
         GROUP BY r.round_date, r.tournament ORDER BY r.round_date, r.tournament`, [req.user.team_id, course]);
     res.json({ course, visits: rows });
@@ -280,7 +312,7 @@ function seasonStartDate() {
 }
 const TEAM_COUNT = 4; // scores that count toward the team total each round
 
-router.get('/team-scores', requireTeamAdmin, async (req, res) => {
+router.get('/team-scores', requireCoach, async (req, res) => {
   try {
     const span = req.query.span === 'career' ? 'career' : 'year';
     const params = [req.user.team_id];
@@ -293,7 +325,7 @@ router.get('/team-scores', requireTeamAdmin, async (req, res) => {
               (r.summary->>'totalScore')::numeric AS score,
               (r.summary->>'vspar')::numeric      AS vspar
          FROM rounds r JOIN users u ON u.id = r.user_id
-        WHERE u.team_id = $1 AND u.role <> 'team_admin'
+        WHERE u.team_id = $1 AND ${PLAYER_SQL}
           AND r.summary ? 'totalScore' AND (r.summary->>'totalScore') <> '' ${dateClause}
         ORDER BY r.round_date, r.tournament, r.round_num, score ASC, r.player_name`,
       params);

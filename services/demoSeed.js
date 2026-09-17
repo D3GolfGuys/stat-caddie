@@ -373,6 +373,10 @@ async function seedTeam(pool) {
     );
     const coachId = cRows[0].id;
 
+    // 2a) Assistant coach — seeded so the Coaching Staff panel has something
+    //     real in it, and so the role can be clicked through in a demo.
+    const assistantEmail = 'assistant@demo.statcaddie';
+
     // 2) Team — reuse the coach's existing team if present, else create it.
     let teamId;
     const { rows: tExist } = await client.query('SELECT id FROM teams WHERE admin_user_id=$1', [coachId]);
@@ -388,6 +392,15 @@ async function seedTeam(pool) {
       teamId = tRows[0].id;
     }
     await client.query('UPDATE users SET team_id=$1 WHERE id=$2', [teamId, coachId]);
+
+    await client.query(
+      `INSERT INTO users (email, password_hash, name, role, team_id, subscription_status, subscription_plan)
+       VALUES ($1,$2,$3,'team_assistant',$4,'active','team')
+       ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role='team_assistant',
+         team_id=EXCLUDED.team_id, subscription_status='active', subscription_plan='team'`,
+      [assistantEmail, password_hash, 'Alex Rivera', teamId]
+    );
+    result.assistantEmail = assistantEmail;
 
     // 3) Players (team_member) with rounds.
     for (let i = 0; i < TEAM_PLAYERS.length; i++) {

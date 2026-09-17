@@ -132,7 +132,7 @@ function renderTimeline(visits){
 }
 document.getElementById('course').addEventListener('change',load);
 (async()=>{ const user=await initApp(); if(!user) return;
-  if(user.role!=='team_admin'){ document.getElementById('app-main').innerHTML='<div class="page-title">Coaches only</div><p style="color:var(--muted);margin-top:8px;">Course history is a coach view. <a href="/app/index.html">Back to your dashboard →</a></p>'; return; }
+  if(!isCoachRole(user.role)){ document.getElementById('app-main').innerHTML='<div class="page-title">Coaches only</div><p style="color:var(--muted);margin-top:8px;">Course history is a coach view. <a href="/app/index.html">Back to your dashboard →</a></p>'; return; }
   await loadCourses();
 })();
 </script>

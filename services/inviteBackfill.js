@@ -40,6 +40,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function buildPlan(db, { teamId = null } = {}) {
   const { rows: invites } = await db.query(`
     SELECT i.id, i.email, i.token, i.team_id, i.created_at, i.expires_at, i.emailed_at,
+           COALESCE(i.role, 'team_member') AS role,
            (i.expires_at <= NOW()) AS expired,
            t.name AS team_name, t.max_members,
            u.name AS coach_name
@@ -61,7 +62,8 @@ async function buildPlan(db, { teamId = null } = {}) {
   const { rows: usage } = await db.query(`
     SELECT t.id,
       (SELECT COUNT(*) FROM users u WHERE u.team_id=t.id AND u.role='team_member')::int AS players,
-      (SELECT COUNT(*) FROM invitations v WHERE v.team_id=t.id AND v.used_at IS NULL AND v.expires_at > NOW())::int AS holding
+      (SELECT COUNT(*) FROM invitations v WHERE v.team_id=t.id AND v.used_at IS NULL AND v.expires_at > NOW()
+                                             AND COALESCE(v.role,'team_member')='team_member')::int AS holding
     FROM teams t WHERE t.id = ANY($1)`, [teamIds]);
   const seats = new Map(usage.map(u => [u.id, u]));
 
@@ -75,6 +77,9 @@ async function buildPlan(db, { teamId = null } = {}) {
     if (inv.emailed_at && !inv.expired) { plan.resend.push(inv); continue; }
 
     if (!inv.expired) { plan.ready.push(inv); continue; }
+
+    // Assistant-coach invites hold no seat, so reviving one is always free.
+    if (inv.role === 'team_assistant') { inv.needsRefresh = true; plan.refresh.push(inv); continue; }
 
     const u = seats.get(inv.team_id);
     const cap = inv.max_members || INCLUDED_SEATS;
@@ -129,6 +134,7 @@ function start(db, invites, { appUrl } = {}) {
           teamName: inv.team_name, coachName: inv.coach_name,
           inviteUrl: `${base}/accept-invite.html?token=${inv.token}`,
           expiresDays: TTL_DAYS,
+          role: inv.role,
         });
         if (r.sent) {
           // Stamp BEFORE moving on, so a crash can never lose the record of a

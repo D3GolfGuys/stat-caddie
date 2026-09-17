@@ -743,6 +743,7 @@ async function viewTeam(id){
   if(!d){ alert('Could not load team.'); return; }
   const players=(d.members||[]).filter(m=>m.role==='team_member');
   const coach=(d.members||[]).find(m=>m.role==='team_admin');
+  const assistants=(d.members||[]).filter(m=>m.role==='team_assistant');
   const rounds=d.rounds||[]; const byP={}; rounds.forEach(r=>{ (byP[r.user_id]=byP[r.user_id]||[]).push(r); });
   const roster=players.map(p=>{ const rs=byP[p.id]||[]; return {p,n:rs.length,avg:playerAvg(rs)}; })
     .sort((a,b)=>(a.avg==null?1:0)-(b.avg==null?1:0)||((a.avg||0)-(b.avg||0)));
@@ -751,7 +752,7 @@ async function viewTeam(id){
   const box=document.getElementById('team-detail');
   box.innerHTML=`<button class="link-btn" onclick="backToTeams()">← All teams</button>
     <div class="page-title" style="margin-top:6px;">${aEsc(d.team.name)} <span class="muted-cell" style="font-size:13px;font-weight:500;">(read-only coach view)</span></div>
-    <div class="page-sub">${aEsc(d.team.division||'')}${d.team.conference?(' · '+aEsc(d.team.conference)):''} · Coach: ${aEsc(coach?coach.name:'—')} · ${players.length} players</div>
+    <div class="page-sub">${aEsc(d.team.division||'')}${d.team.conference?(' · '+aEsc(d.team.conference)):''} · Coach: ${aEsc(coach?coach.name:'—')}${assistants.length?(' · Assistants: '+assistants.map(a=>aEsc(a.name)).join(', ')):''} · ${players.length} players</div>
     <div class="panel" style="padding:0;"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;color:var(--green-dark);font-size:14px;">Roster</div>
       <table class="app-table"><thead><tr><th>#</th><th style="text-align:left;">Player</th><th>Rounds</th><th>Avg</th></tr></thead><tbody>${rosterRows}</tbody></table></div>
     <div class="panel" style="padding:0;"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;color:var(--green-dark);font-size:14px;">Recent team rounds</div>

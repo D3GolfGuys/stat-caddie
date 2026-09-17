@@ -53,7 +53,8 @@
       });
       const data = await res.json();
       if (!res.ok) { errEl.textContent=data.error||'Failed to join'; errEl.style.display='block'; btn.textContent='Join Team'; btn.disabled=false; return; }
-      window.location.href='/app/index.html';
+      // Players land on their own dashboard, assistant coaches on the team board.
+      window.location.href = data.home || '/app/index.html';
     } catch { errEl.textContent='Network error.'; errEl.style.display='block'; btn.textContent='Join Team'; btn.disabled=false; }
   });
 </script>

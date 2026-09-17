@@ -112,7 +112,7 @@
 <script>
 let ME=null, EVENTS=[], CUR=null;
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function isCoach(){ return ME && ME.role==='team_admin'; }
+function isCoach(){ return !!ME && isCoachRole(ME.role); }
 function fmtToPar(v){ if(v==null) return '—'; const n=Number(v); if(n===0) return 'E'; const t=Number.isInteger(n)?String(n):n.toFixed(1); return n>0?('+'+t):t; }
 function fmtDate(s){ try{ return new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(_){ return ''; } }
 function scoringLabel(cfg){ cfg=cfg||{}; let s=cfg.scoring==='average_to_par'?'Average to par':'Cumulative to par'; if(cfg.countBest) s+=', best '+cfg.countBest; else if(cfg.dropWorst) s+=', drop worst '+cfg.dropWorst; return s; }

@@ -1,10 +1,20 @@
+// Team roles, mirrored from services/roles.js on the server.
+//   team_admin     head coach      — full control incl. roster + billing
+//   team_assistant assistant coach — same views, no roster/billing
+//   team_member    player
+const COACH_ROLES = ['team_admin', 'team_assistant'];
+const isCoachRole = r => COACH_ROLES.includes(r);
+const isHeadCoachRole = r => r === 'team_admin';
+// Roles whose access rides on the team's subscription, not their own.
+const TEAM_BILLED_ROLES = ['team_member', 'team_assistant'];
+
 // Renders the shared app nav + sidebar, handles auth redirect
 async function initApp(opts = {}) {
   const user = await requireAuth();
   if (!user) return null;
 
   // Warn if subscription inactive (but don't block — server handles enforcement)
-  if (user.subscription_status !== 'active' && user.role !== 'team_member') {
+  if (user.subscription_status !== 'active' && !TEAM_BILLED_ROLES.includes(user.role)) {
     const banner = document.getElementById('sub-banner');
     if (banner) banner.style.display = 'flex';
   }
@@ -21,9 +31,16 @@ async function initApp(opts = {}) {
 
   // Coaches are team-first: reveal team sections, and hide player-only tools
   // (capture / stats reports) since coaches don't log their own rounds.
-  if (user.role === 'team_admin') {
+  if (isCoachRole(user.role)) {
     document.querySelectorAll('.team-admin-only').forEach(el => el.style.display = '');
     document.querySelectorAll('.player-only').forEach(el => el.style.display = 'none');
+  }
+
+  // Assistant coaches see everything the head coach sees, but the roster,
+  // seats and team settings belong to the head coach. Hide those controls
+  // rather than letting a click come back as a 403.
+  if (!isHeadCoachRole(user.role)) {
+    document.querySelectorAll('.head-coach-only').forEach(el => el.style.display = 'none');
   }
 
   // Now that the role-specific nav has been resolved, reveal the sidebar.

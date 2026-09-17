@@ -243,7 +243,7 @@
     doc.autoTable({
       startY: y,
       head: [['#', 'Player', 'Rds', 'Avg', 'vs Par', 'FW', 'GIR', 'Putts', 'Scr']],
-      body: ranked.length ? ranked.map((r, i) => [r.s.rounds ? (i + 1) : '–', r.p.name + (r.p.role === 'team_admin' ? ' (Coach)' : ''),
+      body: ranked.length ? ranked.map((r, i) => [r.s.rounds ? (i + 1) : '–', r.p.name + (r.p.role === 'team_admin' ? ' (Head Coach)' : r.p.role === 'team_assistant' ? ' (Asst. Coach)' : ''),
         r.s.rounds || '—', fmt.n2(r.s.scoringAvg), fmt.vs(r.s.vspar), fmt.frac(r.s.fwPct), fmt.frac(r.s.girPct), fmt.n1(r.s.puttsPerRound), fmt.frac(r.s.scramblingPct)])
         : [[{ content: 'No players yet.', colSpan: 9, styles: { halign: 'center', textColor: C.muted } }]],
       theme: 'grid', styles: { fontSize: 8.5, cellPadding: 4 },
@@ -268,8 +268,9 @@
     const JsPDF = ensureLib(); if (!JsPDF) return;
     players = players || []; rounds = rounds || [];
     // A coach isn't a player — keep them (and any rounds they logged) out of the report.
-    const coachIds = new Set(players.filter(p => p.role === 'team_admin').map(p => p.id));
-    const roster = players.filter(p => p.role !== 'team_admin');
+    // Coaching staff (head + assistants) are excluded from team numbers.
+    const coachIds = new Set(players.filter(p => p.role !== 'team_member').map(p => p.id));
+    const roster = players.filter(p => p.role === 'team_member');
     const playerRounds = rounds.filter(r => !coachIds.has(r.user_id));
     const doc = new JsPDF({ unit: 'pt', format: 'letter' });
     drawTeamPage(doc, { teamName, players: roster, rounds: playerRounds });

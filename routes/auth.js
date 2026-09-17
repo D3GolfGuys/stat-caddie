@@ -6,6 +6,7 @@ const requireAuth = require('../middleware/requireAuth');
 const { findOrCreateSchool } = require('../services/schools');
 const crypto = require('crypto');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emails');
+const { ASSISTANT, PLAYER, TEAM_BILLED_ROLES } = require('../services/roles');
 
 const RESET_TTL_MINUTES = 60;
 const hashToken = t => crypto.createHash('sha256').update(t).digest('hex');
@@ -105,8 +106,8 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
-    // For team members, check team subscription
-    if (user.role === 'team_member' && user.team_id) {
+    // Players AND assistant coaches ride on the team's subscription.
+    if (TEAM_BILLED_ROLES.includes(user.role) && user.team_id) {
       const { rows: teamRows } = await pool.query('SELECT subscription_status FROM teams WHERE id = $1', [user.team_id]);
       if (teamRows.length && teamRows[0].subscription_status !== 'active') {
         return res.status(403).json({ error: 'Team subscription is inactive. Contact your team admin.' });
@@ -135,7 +136,9 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ user: { ...req.user, isAdmin } });
 });
 
-// POST /api/auth/accept-invite  (join team via invitation token)
+// POST /api/auth/accept-invite  (join a team via invitation token)
+// The invitation carries the role — 'team_member' (player) or 'team_assistant'
+// (assistant coach). Rows predating staff invites have no role and are players.
 router.post('/accept-invite', async (req, res) => {
   const { token, password, name } = req.body;
   if (!token || !password || !name) return res.status(400).json({ error: 'Token, name and password required' });
@@ -151,19 +154,21 @@ router.post('/accept-invite', async (req, res) => {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [inv.email]);
     if (existing.rows.length) return res.status(409).json({ error: 'Email already registered. Please log in.' });
 
+    const role = inv.role === ASSISTANT ? ASSISTANT : PLAYER;
     const password_hash = await bcrypt.hash(password, 12);
     const { rows } = await pool.query(
       'INSERT INTO users (email, password_hash, name, role, team_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, name, role, team_id',
-      [inv.email, password_hash, name, 'team_member', inv.team_id]
+      [inv.email, password_hash, name, role, inv.team_id]
     );
     await pool.query('UPDATE invitations SET used_at = NOW() WHERE id = $1', [inv.id]);
 
     // Welcome mail is best-effort - the account is already live either way.
     const { rows: teamRows } = await pool.query('SELECT name FROM teams WHERE id = $1', [inv.team_id]);
-    sendWelcomeEmail(inv.email, { playerName: name, teamName: teamRows[0]?.name });
+    sendWelcomeEmail(inv.email, { playerName: name, teamName: teamRows[0]?.name, role });
 
     issueToken(rows[0].id, res);
-    res.status(201).json({ user: rows[0] });
+    // `home` tells the join page where to land — staff go to the team board.
+    res.status(201).json({ user: rows[0], home: role === ASSISTANT ? '/app/team.html' : '/app/index.html' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to accept invitation' });

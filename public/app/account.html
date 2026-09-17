@@ -120,12 +120,13 @@ async function openBillingPortal() {
   document.getElementById('profile-email').value = currentUser.email;
 
   const planNames = { individual:'Individual ($9.99/mo)', team:'Team ($29.99/mo)' };
-  document.getElementById('sub-plan').textContent = planNames[currentUser.subscription_plan] || (currentUser.role === 'team_member' ? 'Team Member' : 'No active plan');
+  const teamSeatLabel = { team_member: 'Team Member', team_assistant: 'Assistant Coach (on team plan)' }[currentUser.role];
+  document.getElementById('sub-plan').textContent = planNames[currentUser.subscription_plan] || teamSeatLabel || 'No active plan';
 
   const status = currentUser.subscription_status;
   const statusEl = document.getElementById('sub-status');
   statusEl.innerHTML = `<span class="badge badge-${status==='active'?'active':'inactive'}">${status || 'inactive'}</span>`;
-  if (status !== 'active' && currentUser.role !== 'team_member') {
+  if (status !== 'active' && !TEAM_BILLED_ROLES.includes(currentUser.role)) {
     document.getElementById('sub-inactive-msg').style.display='block';
     document.getElementById('billing-btn').style.display='none';
   }

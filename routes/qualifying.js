@@ -2,7 +2,8 @@ const router = require('express').Router();
 const { pool } = require('../db');
 const requireAuth = require('../middleware/requireAuth');
 const requireSubscription = require('../middleware/requireSubscription');
-const { requireTeamAdmin } = require('../middleware/requireSubscription');
+const { requireCoach } = require('../middleware/requireSubscription');
+const { isCoach } = require('../services/roles');
 const { isAdminEmail } = require('../services/admins');
 const q = require('../services/qualifying');
 
@@ -38,7 +39,7 @@ router.get('/open', async (req, res) => {
 });
 
 // POST /api/qualifying — coach creates an event.
-router.post('/', requireTeamAdmin, async (req, res) => {
+router.post('/', requireCoach, async (req, res) => {
   try {
     if (!req.user.team_id) return res.status(400).json({ error: 'No team on account' });
     const { name, startsOn, endsOn, config } = req.body;
@@ -58,7 +59,7 @@ router.get('/:id', loadOwnEvent, async (req, res) => {
 });
 
 // POST /api/qualifying/:id/status  { status: 'open' | 'closed' } — coach only.
-router.post('/:id/status', requireTeamAdmin, loadOwnEvent, async (req, res) => {
+router.post('/:id/status', requireCoach, loadOwnEvent, async (req, res) => {
   try {
     const status = req.body.status === 'closed' ? 'closed' : 'open';
     res.json({ event: await q.setStatus(pool, req.qualEvent.id, status) });
@@ -69,7 +70,7 @@ router.post('/:id/status', requireTeamAdmin, loadOwnEvent, async (req, res) => {
 router.post('/:id/enroll', loadOwnEvent, async (req, res) => {
   try {
     const targetId = Number(req.body.userId) || req.user.id;
-    if (targetId !== req.user.id && req.user.role !== 'team_admin' && !isAdminEmail(req.user.email)) {
+    if (targetId !== req.user.id && !isCoach(req.user) && !isAdminEmail(req.user.email)) {
       return res.status(403).json({ error: 'Team admin required to enroll others' });
     }
     await q.enroll(pool, req.qualEvent.id, targetId);
@@ -81,7 +82,7 @@ router.post('/:id/enroll', loadOwnEvent, async (req, res) => {
 router.post('/:id/withdraw', loadOwnEvent, async (req, res) => {
   try {
     const targetId = Number(req.body.userId) || req.user.id;
-    if (targetId !== req.user.id && req.user.role !== 'team_admin' && !isAdminEmail(req.user.email)) {
+    if (targetId !== req.user.id && !isCoach(req.user) && !isAdminEmail(req.user.email)) {
       return res.status(403).json({ error: 'Team admin required' });
     }
     await q.withdraw(pool, req.qualEvent.id, targetId);

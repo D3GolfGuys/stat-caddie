@@ -73,9 +73,9 @@
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px;flex-wrap:wrap;">
         <div class="page-title" id="team-name">Team Dashboard</div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-outline btn-sm" onclick="openSettings()">⚙ Team Settings</button>
+          <button class="btn btn-outline btn-sm head-coach-only" onclick="openSettings()">⚙ Team Settings</button>
           <button class="btn btn-outline btn-sm" onclick="downloadTeamPDF()">⬇ Team PDF</button>
-          <button class="btn btn-primary btn-sm" onclick="openInvite()">+ Invite Player</button>
+          <button class="btn btn-primary btn-sm head-coach-only" onclick="openInvite()">+ Invite Player</button>
         </div>
       </div>
       <div class="page-sub" id="team-sub">Your team at a glance — click a player to drill into their game.</div>
@@ -127,6 +127,31 @@
         <div class="ss-cell"><div class="ss-v" id="k-rounds">—</div><div class="ss-l">Rounds</div></div>
         <div class="ss-cell"><div class="ss-v" id="k-score">—</div><div class="ss-l">Avg Score</div></div>
         <div class="ss-cell"><div class="ss-v" id="k-vspar">—</div><div class="ss-l">Vs Par</div></div>
+      </div>
+
+      <!-- Coaching staff — head coach + assistants. Staff are free and never
+           take a player seat, so this sits apart from the roster/seat count. -->
+      <div class="table-card" id="staff-card" style="margin-bottom:16px;">
+        <div class="table-card-header">
+          <h3>Coaching Staff</h3>
+          <span style="display:flex;align-items:center;gap:10px;">
+            <span id="staff-count" style="font-size:12px;color:var(--muted);"></span>
+            <button class="btn btn-outline btn-sm head-coach-only" onclick="openStaffInvite()">+ Add Assistant Coach</button>
+          </span>
+        </div>
+        <div id="staff-invite" style="display:none;padding:14px 16px;border-top:1px solid var(--border);background:#fbfdfb;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5;">
+            An assistant coach sees everything you see — the team board, every player's drill-down, course history, team scoring and rankings — and can run qualifying.
+            Roster changes, seats and team settings stay with you. <strong>Assistants are free and don't use a player seat.</strong>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-group" style="margin:0;flex:1;min-width:220px;"><label>Assistant coach email</label><input type="email" id="staff-email" placeholder="assistant@school.edu"></div>
+            <button class="btn btn-primary btn-sm" style="margin-bottom:2px;" onclick="sendStaffInvite()">Send Invite</button>
+            <button class="btn btn-outline btn-sm" style="margin-bottom:2px;" onclick="closeStaffInvite()">Cancel</button>
+          </div>
+          <div id="staff-invite-result" style="margin-top:10px;font-size:12px;"></div>
+        </div>
+        <div id="staff-body"></div>
       </div>
 
       <!-- Roster / leaderboard -->
@@ -235,7 +260,9 @@ const fmtP  = v => v==null?'—':Number(v).toFixed(1)+'%';
 const avg   = (arr,key) => { const v=arr.filter(s=>s&&s[key]!=null); return v.length ? v.reduce((a,b)=>a+b[key],0)/v.length : null; };
 
 // ── state ───────────────────────────────────────────────
-let TEAM=null, MEMBERS=[], ROUNDS=[], SEATS=null;
+let TEAM=null, MEMBERS=[], ROUNDS=[], SEATS=null, INVITES=[];
+let ME=null;                                  // the signed-in coach
+let CAN={ manageRoster:false, manageSeats:false, manageTeam:false };  // server-declared permissions
 let sortKey='scoringAvg', sortDir=1;   // dir: 1 asc, -1 desc. Lower score is better → asc default.
 let selectedPlayer=null;
 
@@ -252,6 +279,81 @@ function statsFor(userId){
     putts: avg(sums,'puttsTotal'),
     scram: avg(sums,'scramblingPct'),
   };
+}
+
+// ── coaching staff ──────────────────────────────────────
+function staffOnly(){ return MEMBERS.filter(m => m.role==='team_admin' || m.role==='team_assistant'); }
+function openStaffInvite(){
+  document.getElementById('staff-invite').style.display='block';
+  document.getElementById('staff-invite-result').innerHTML='';
+  document.getElementById('staff-email').focus();
+}
+function closeStaffInvite(){ document.getElementById('staff-invite').style.display='none'; }
+
+async function sendStaffInvite(){
+  const email=document.getElementById('staff-email').value.trim();
+  const out=document.getElementById('staff-invite-result');
+  if(!email) return;
+  const r=await API.post('/api/teams/invite',{ email, role:'team_assistant' });
+  if(!r) return;
+  const data=await r.json();
+  if(r.ok){
+    if(data.emailed){
+      out.style.color='var(--green-mid)';
+      out.innerHTML=`✅ Invitation emailed to <strong>${tsEsc(email)}</strong>. It expires in 7 days.`;
+    } else {
+      // Same honesty rule as player invites: the invite is live either way, but
+      // never let the coach believe an email went out when it didn't.
+      out.style.color='var(--gold)';
+      out.innerHTML=`⚠️ Invite created, but the email could not be sent${data.emailReason?` (${tsEsc(data.emailReason)})`:''}. Share this link with ${tsEsc(email)} directly:<br><code style="word-break:break-all;font-size:11px;">${tsEsc(data.inviteUrl)}</code>`;
+    }
+    document.getElementById('staff-email').value='';
+    await load();
+  } else {
+    out.style.color='var(--red)';
+    out.textContent=data.error||'Failed to send invite';
+  }
+}
+
+function renderStaff(){
+  const staff=staffOnly();
+  const pending=INVITES.filter(i=>i.role==='team_assistant');
+  const count=document.getElementById('staff-count');
+  const assistants=staff.filter(m=>m.role==='team_assistant').length;
+  count.textContent = `${assistants} assistant${assistants===1?'':'s'}`
+    + (pending.length?` · ${pending.length} pending`:'') + ' · free, no seat used';
+
+  const rows = staff.map(m=>{
+    const head = m.role==='team_admin';
+    const badge = head
+      ? '<span class="badge badge-gold">Head Coach</span>'
+      : '<span class="badge" style="background:#e6f6ec;color:#0a7d3c;">Assistant Coach</span>';
+    const canRemove = CAN.manageRoster && !head;
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--border);flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <strong style="font-size:14px;">${tsEsc(m.name)}</strong> ${badge}
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">${tsEsc(m.email||'')}</div>
+      </div>
+      ${canRemove?`<button class="link-btn" style="color:var(--red);" onclick="removeMember(${m.id},'${String(m.name).replace(/'/g,"\\'")}',event)">Remove</button>`:''}
+    </div>`;
+  });
+
+  const pendingRows = pending.map(inv=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--border);flex-wrap:wrap;background:#fcfcfa;">
+      <div style="flex:1;min-width:200px;">
+        <strong style="font-size:14px;">${tsEsc(inv.email)}</strong>
+        <span class="badge" style="background:#f3f4f5;color:#6b7c73;">Invite pending</span>
+        <div style="font-size:12px;color:${inv.expired?'var(--red)':'var(--muted)'};margin-top:2px;">
+          ${inv.expired?'Expired':'Expires'} ${fmtInvDate(inv.expires_at)} · sent ${fmtInvDate(inv.created_at)}
+        </div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="resendInvite(${inv.id},this)">Resend</button>
+      <button class="link-btn" style="color:var(--red);" onclick="cancelInvite(${inv.id},'${String(inv.email).replace(/'/g,"\\'")}')">Cancel</button>
+    </div>`);
+
+  document.getElementById('staff-body').innerHTML =
+    rows.concat(pendingRows).join('') ||
+    '<div class="empty-hint">No coaching staff yet.</div>';
 }
 
 // ── invite / manage ─────────────────────────────────────
@@ -375,9 +477,10 @@ async function removeMember(userId, name, ev){
 }
 
 // ── render ──────────────────────────────────────────────
-// Coaches aren't players — keep them (and their rounds) out of the team view.
-function playersOnly(){ return MEMBERS.filter(m => m.role !== 'team_admin'); }
-function playerRoundsOnly(){ const coach = new Set(MEMBERS.filter(m => m.role === 'team_admin').map(m => m.id)); return ROUNDS.filter(r => !coach.has(r.user_id)); }
+// Coaching staff (head coach AND assistants) aren't players — keep them, and
+// their rounds, out of every team number.
+function playersOnly(){ return MEMBERS.filter(m => m.role === 'team_member'); }
+function playerRoundsOnly(){ const staff = new Set(MEMBERS.filter(m => m.role !== 'team_member').map(m => m.id)); return ROUNDS.filter(r => !staff.has(r.user_id)); }
 function svGridHTML(items){ return items.map(([lab,val]) => `<div class="sv-cell"><div class="sv-lab">${lab}</div><div class="sv-val">${val}</div></div>`).join(''); }
 
 function renderTeamSummary(){
@@ -422,15 +525,13 @@ function renderRoster(){
     document.getElementById('member-count').textContent = `${players.length} player${players.length===1?'':'s'}`;
   }
   const tb=document.getElementById('roster-tbody');
-  if(!players.length){ tb.innerHTML='<tr><td colspan="10" class="empty-hint">No players yet. Invite your first player above.</td></tr>'; return; }
+  if(!players.length){ tb.innerHTML=`<tr><td colspan="10" class="empty-hint">No players yet.${CAN.manageRoster?' Invite your first player above.':' The head coach can invite players.'}</td></tr>`; return; }
   tb.innerHTML = rows.map((row,i)=>{
     const {m,s}=row;
-    const isCoach = m.role==='team_admin';
-    const badge = isCoach ? '<span class="badge badge-gold">Coach</span>' : '';
     const vsClass = s.vspar!=null ? (s.vspar<0?'val-good':s.vspar>0?'val-bad':'') : '';
     return `<tr class="player-row ${selectedPlayer===m.id?'selected':''}" onclick="openDetail(${m.id})">
       <td><span class="rank-badge">${s.rounds?i+1:'–'}</span></td>
-      <td style="text-align:left;"><strong>${m.name}</strong> ${badge}</td>
+      <td style="text-align:left;"><strong>${m.name}</strong></td>
       <td>${s.rounds||'—'}</td>
       <td><strong>${fmt1(s.scoringAvg)}</strong></td>
       <td class="${vsClass}">${fmtVs(s.vspar)}</td>
@@ -440,7 +541,7 @@ function renderRoster(){
       <td>${fmtP(s.scram)}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" onclick="event.stopPropagation();openDetail(${m.id})">View</button>
-        ${!isCoach ? `· <button class="link-btn" style="color:var(--red);" onclick="removeMember(${m.id},'${m.name.replace(/'/g,"\\'")}',event)">Remove</button>`:''}
+        ${CAN.manageRoster ? `· <button class="link-btn" style="color:var(--red);" onclick="removeMember(${m.id},'${m.name.replace(/'/g,"\\'")}',event)">Remove</button>`:''}
       </td>
     </tr>`;
   }).join('');
@@ -458,7 +559,8 @@ function openDetail(userId){
   const s=statsFor(userId);
   const rs=ROUNDS.filter(r=>r.user_id===userId);
 
-  document.getElementById('pd-name').textContent = m.name + (m.role==='team_admin'?' (Coach)':'');
+  const roleSuffix = { team_admin:' (Head Coach)', team_assistant:' (Assistant Coach)' }[m.role] || '';
+  document.getElementById('pd-name').textContent = m.name + roleSuffix;
   document.getElementById('pd-sub').textContent  = `${s.rounds} round${s.rounds===1?'':'s'} logged`;
 
   document.getElementById('pd-cards').innerHTML = [
@@ -567,12 +669,18 @@ function fmtInvDate(v){ try{ return new Date(v).toLocaleDateString(undefined,{mo
 
 async function loadInvites(){
   const card=document.getElementById('invites-card');
-  const r=await API.get('/api/teams/invitations');
-  if(!r||!r.ok){ card.style.display='none'; return; }
-  const list=await r.json();
+  INVITES=[];
+  // Only the head coach can act on invitations, and the endpoint is gated to
+  // them — so an assistant simply never asks for the list.
+  if(CAN.manageRoster){
+    const r=await API.get('/api/teams/invitations');
+    if(r&&r.ok) INVITES=await r.json();
+  }
+  renderStaff();                                       // staff invites live in the staff card
+  const list=INVITES.filter(i=>i.role!=='team_assistant');
   if(!list.length){ card.style.display='none'; return; }
   card.style.display='';
-  document.getElementById('invites-count').textContent=`${list.length} awaiting sign-up`;
+  document.getElementById('invites-count').textContent=`${list.length} player${list.length===1?'':'s'} awaiting sign-up`;
   document.getElementById('invites-body').innerHTML=list.map(inv=>`
     <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--border);flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;">
@@ -604,10 +712,12 @@ async function cancelInvite(id, email){
 
 async function load(){
   const [meR, rndR] = await Promise.all([ API.get('/api/teams/me'), API.get('/api/teams/rounds') ]);
-  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; SEATS=d.seats||null; if(TEAM){ document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; const seg=[TEAM.division,TEAM.conference].filter(Boolean).join(' · '); document.getElementById('team-sub').textContent = seg ? seg + ' — click a player to drill into their game.' : 'Set your division in ⚙ Team Settings to unlock rankings — click a player to drill in.'; } }
+  if(meR&&meR.ok){ const d=await meR.json(); TEAM=d.team; MEMBERS=d.members||[]; SEATS=d.seats||null;
+    CAN = d.can || { manageRoster:isHeadCoachRole(ME&&ME.role), manageSeats:isHeadCoachRole(ME&&ME.role), manageTeam:isHeadCoachRole(ME&&ME.role) }; if(TEAM){ document.getElementById('team-name').textContent = TEAM.name || 'Team Dashboard'; const seg=[TEAM.division,TEAM.conference].filter(Boolean).join(' · '); document.getElementById('team-sub').textContent = seg ? seg + ' — click a player to drill into their game.' : 'Set your division in ⚙ Team Settings to unlock rankings — click a player to drill in.'; } }
   if(rndR&&rndR.ok){ ROUNDS=await rndR.json(); }
   renderTeamSummary();
   renderRoster();
+  renderStaff();
   loadInvites();
   loadTeamRankings();
   loadTeamScores();
@@ -617,10 +727,12 @@ async function load(){
 (async () => {
   const user = await initApp();
   if(!user) return;
-  if(user.role!=='team_admin'){
+  ME = user;
+  if(!isCoachRole(user.role)){
     document.getElementById('app-main').innerHTML='<div class="page-title">Coaches only</div><p style="color:var(--muted);margin-top:8px;">This is the team dashboard for coaches. <a href="/app/index.html">Back to your dashboard →</a></p>';
     return;
   }
+  CAN.manageRoster = CAN.manageSeats = CAN.manageTeam = isHeadCoachRole(user.role);
   await load();
 })();
 </script>

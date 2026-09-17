@@ -433,6 +433,11 @@ const schema = `
   -- the backfill is resumable and never silently re-mails anyone.
   ALTER TABLE invitations ADD COLUMN IF NOT EXISTS emailed_at TIMESTAMP;
 
+  -- Which role the invitee joins as: 'team_member' (player) or
+  -- 'team_assistant' (assistant coach). Every invitation predating staff
+  -- invites was a player, which is exactly what the default backfills.
+  ALTER TABLE invitations ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'team_member';
+
   -- ===================================================================
   --  Password resets - single-use, short-lived tokens. Only a SHA-256 hash of
   --  the token is stored, so a database leak can't be used to seize accounts.

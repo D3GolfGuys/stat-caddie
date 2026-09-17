@@ -201,13 +201,13 @@ async function computeTeamProfiles(db, seasonId, opts = {}) {
   const metricId = {}; mrows.forEach(m => (metricId[m.key] = m.id));
   const teams = (await db.query(
     `SELECT DISTINCT t.id FROM teams t
-       JOIN users u ON u.team_id = t.id AND u.role <> 'team_admin'
+       JOIN users u ON u.team_id = t.id AND u.role = 'team_member'
        JOIN rounds r ON r.user_id = u.id`)).rows;
   let count = 0, upserts = 0;
   for (const t of teams) {
     const rounds = (opts.since
-      ? await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin' AND r.round_date >= $2 AND COALESCE(r.context,'casual') <> 'practice'`, [t.id, opts.since])
-      : await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role <> 'team_admin' AND COALESCE(r.context,'casual') <> 'practice'`, [t.id])).rows;
+      ? await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role = 'team_member' AND r.round_date >= $2 AND COALESCE(r.context,'casual') <> 'practice'`, [t.id, opts.since])
+      : await db.query(`SELECT r.summary, r.tournament FROM rounds r JOIN users u ON u.id = r.user_id WHERE u.team_id = $1 AND u.role = 'team_member' AND COALESCE(r.context,'casual') <> 'practice'`, [t.id])).rows;
     if (!rounds.length) continue;
     const season = computeSeason(rounds);
     const vals = metricValues(season);

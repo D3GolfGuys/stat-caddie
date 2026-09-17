@@ -10,6 +10,7 @@
  * ignore <style> blocks and modern CSS. Keep it boring and it renders anywhere.
  */
 const { sendMail } = require('./mailer');
+const { ASSISTANT, PLAYER } = require('./roles');
 
 const GREEN_DARK = '#1a3a2a';
 const GREEN_MID = '#2d5c3e';
@@ -63,9 +64,38 @@ function fallbackLink(url) {
 }
 
 // -- Invite ------------------------------------------------------------------
-function inviteTemplate({ teamName, coachName, inviteUrl, expiresDays = 7 }) {
+// One template, two audiences. A player is being asked to start logging rounds;
+// an assistant coach is being handed the team board. Same link, different promise.
+function inviteTemplate({ teamName, coachName, inviteUrl, expiresDays = 7, role = PLAYER }) {
   const team = teamName || 'your team';
-  const from = coachName ? `${coachName} has` : 'Your coach has';
+  const isStaff = role === ASSISTANT;
+  const from = coachName ? `${coachName} has` : (isStaff ? 'The head coach has' : 'Your coach has');
+
+  if (isStaff) {
+    return {
+      subject: `${coachName ? coachName + ' added you' : "You've been added"} as an assistant coach for ${team}`,
+      text: `${from} added you as an assistant coach for ${team} on College Golf Metrics.
+
+Set up your coach account here (link expires in ${expiresDays} days):
+${inviteUrl}
+
+You'll see the full team board - every player's stats and trends, team scoring history, course history and rankings - and you can run qualifying. Roster changes and billing stay with the head coach.
+
+- College Golf Metrics
+${appUrl()}`,
+      html: layout({
+        heading: `You're an assistant coach for ${esc(team)}`,
+        preheader: `${from} added you to the coaching staff on College Golf Metrics.`,
+        bodyHtml: `
+        <p style="margin:0 0 4px;">${esc(from)} added you as an <strong>assistant coach</strong> for <strong>${esc(team)}</strong> on College Golf Metrics.</p>
+        <p style="margin:12px 0 0;">Set up your account and you'll see the same team board the head coach sees: every player's stats and tendencies, team scoring history, course history and rankings. You can run qualifying too. Roster changes and billing stay with the head coach.</p>
+        ${button(inviteUrl, 'Set up my account')}
+        <p style="margin:0;font-size:13px;color:${MUTED};">This invitation expires in ${expiresDays} days.</p>
+        ${fallbackLink(inviteUrl)}`,
+      }),
+    };
+  }
+
   return {
     subject: `${coachName ? coachName + ' invited you' : "You're invited"} to join ${team} on College Golf Metrics`,
     text: `${from} invited you to join ${team} on College Golf Metrics.
@@ -91,9 +121,42 @@ ${appUrl()}`,
 }
 
 // -- Welcome (sent once the player accepts) ----------------------------------
-function welcomeTemplate({ playerName, teamName }) {
+function welcomeTemplate({ playerName, teamName, role = PLAYER }) {
   const url = appUrl();
   const first = String(playerName || '').split(' ')[0] || 'there';
+
+  if (role === ASSISTANT) {
+    const team = teamName || 'your team';
+    return {
+      subject: `You're on the staff - welcome to College Golf Metrics`,
+      text: `Hi ${first},
+
+Your assistant coach account on ${team} is ready.
+
+Three things to try first:
+1. Open the team board - every player's averages, tendencies and trends in one table.
+2. Click a player - the drill-down has their round log and a printable report.
+3. Set up qualifying - run an intra-squad competition and let the scores decide.
+
+Start here: ${url}/app/team.html
+
+- College Golf Metrics`,
+      html: layout({
+        heading: `Welcome, ${esc(first)} - you're on the staff`,
+        preheader: `Your assistant coach account on ${esc(team)} is ready.`,
+        bodyHtml: `
+        <p style="margin:0;">Your assistant coach account on <strong>${esc(team)}</strong> is ready. Three things worth doing first:</p>
+        <ol style="margin:14px 0 0;padding-left:20px;">
+          <li style="margin-bottom:8px;"><strong>Open the team board.</strong> Every player's averages, tendencies and trends in one sortable table.</li>
+          <li style="margin-bottom:8px;"><strong>Click a player.</strong> The drill-down has their round log, their stat profile and a printable report.</li>
+          <li><strong>Set up qualifying.</strong> Run an intra-squad competition and let the scores decide the lineup.</li>
+        </ol>
+        ${button(url + '/app/team.html', 'Open the team board')}
+        <p style="margin:0;font-size:13px;color:${MUTED};">Roster changes and billing stay with the head coach. Questions? Just reply to this email.</p>`,
+      }),
+    };
+  }
+
   return {
     subject: `You're on the roster - welcome to College Golf Metrics`,
     text: `Hi ${first},

@@ -153,11 +153,13 @@ webapp/
 
 | Plan | Price | Players | Features |
 |---|---|---|---|
-| Team | $29.99/mo | 15 included | Full player capture & reporting, team dashboard with drop-the-high scoring, course history, national rankings & leaderboards, roster management & invites, one-click player & team PDF reports |
+| Team | $29.99/mo | 15 included (staff free) | Full player capture & reporting, unlimited assistant coaches, team dashboard with drop-the-high scoring, course history, national rankings & leaderboards, roster management & invites, one-click player & team PDF reports |
 
 Signup is team-only: coaches create the account and invite players to join their roster.
 
-**Seat overflow (per-seat pricing).** The Team plan includes 15 player seats (the coach/admin does not count against them). Beyond 15, each additional player is $2/player/mo. When a coach hits the cap, inviting another player prompts them to add seats; adding seats raises the team's cap immediately (`POST /api/teams/seats`) and the overflow is reconciled on the next invoice. Seat usage — active players plus still-valid pending invitations — is returned in the `seats` object on `GET /api/teams/me`. During beta the overflow is billed manually rather than auto-charged.
+**Roles.** A team has three: the **head coach** (`team_admin`, the account owner), **assistant coaches** (`team_assistant`) and **players** (`team_member`). An assistant coach sees everything the head coach sees — team board, player drill-downs, course history, team scoring and rankings — and can run qualifying, but cannot invite or remove people, buy seats or change team settings. **Assistant coaches are free and never consume a player seat**, so a team at its cap can still add staff. They're invited from the Coaching Staff panel on the team dashboard and inherit the team's subscription, exactly like players. The role lives in one place, `services/roles.js`; the API declares what the caller may do in the `can` object on `GET /api/teams/me`.
+
+**Seat overflow (per-seat pricing).** The Team plan includes 15 player seats (coaching staff — head coach and assistants — do not count against them). Beyond 15, each additional player is $2/player/mo. When a coach hits the cap, inviting another player prompts them to add seats; adding seats raises the team's cap immediately (`POST /api/teams/seats`) and the overflow is reconciled on the next invoice. Seat usage — active players plus still-valid pending invitations — is returned in the `seats` object on `GET /api/teams/me`. During beta the overflow is billed manually rather than auto-charged.
 
 ---
 
@@ -185,10 +187,10 @@ Rankings are computed **only from rounds entered in College Golf Metrics** — t
 | DELETE | `/api/rounds/:id` | ✓ Sub | Delete round |
 | GET | `/api/courses/search` | ✓ | Course lookup (par/HCP/yardage pre-fill) |
 | GET | `/api/teams/me` | ✓ | Team info + members |
-| PUT | `/api/teams/me` | ✓ Admin | Update team name |
-| POST | `/api/teams/invite` | ✓ Admin | Invite player by email |
-| DELETE | `/api/teams/members/:id` | ✓ Admin | Remove player |
-| GET | `/api/teams/rounds` | ✓ Admin | All team rounds + team scoring |
+| PUT | `/api/teams/me` | ✓ Head coach | Update team name |
+| POST | `/api/teams/invite` | ✓ Head coach | Invite a player, or an assistant coach with `role: 'team_assistant'` (no seat) |
+| DELETE | `/api/teams/members/:id` | ✓ Head coach | Remove a player or an assistant coach |
+| GET | `/api/teams/rounds` | ✓ Any coach | All team rounds + team scoring |
 | POST | `/api/teams/seats` | ✓ Admin | Add player seats beyond the included 15 ($2/player/mo) |
 | GET | `/api/rankings/metrics` | — | Metric registry for leaderboards |
 | GET | `/api/rankings/leaderboard` | — | Player/team rankings by metric, segment & gender |
